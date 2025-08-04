@@ -34,7 +34,7 @@ class UpdateSignalEmitter(QObject):
 class CS2Tool(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.version = "1.2.0"
+        self.version = "1.2.1"
         self.is_dark_mode = False
         self.config_manager = ConfigManager()
         self.animation_manager = AnimationManager(self)
@@ -678,7 +678,6 @@ class CS2Tool(FluentWindow):
             self.show_error("打开失败", f"无法打开教程网站：{str(e)}")
         
     def check_for_updates(self):
-        # Run in a separate thread to not block the UI
         thread = threading.Thread(target=self._update_check_thread, daemon=True)
         thread.start()
 
