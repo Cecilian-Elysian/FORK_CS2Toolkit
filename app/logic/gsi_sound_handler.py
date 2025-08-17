@@ -55,7 +55,21 @@ class GSISoundHandler:
             return
             
         try:
-            gsi_data = json.loads(gsi_data_bytes.decode('utf-8'))
+            # 尝试多种编码方式解码数据
+            gsi_data_str = None
+            for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
+                try:
+                    gsi_data_str = gsi_data_bytes.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if gsi_data_str is None:
+                # 如果所有编码都失败，使用错误处理方式
+                gsi_data_str = gsi_data_bytes.decode('utf-8', errors='ignore')
+                print("警告: GSI数据包含无法解码的字符，已忽略部分内容")
+            
+            gsi_data = json.loads(gsi_data_str)
             
             # 检查炸弹事件
             self._check_bomb_events(gsi_data)
@@ -69,8 +83,10 @@ class GSISoundHandler:
             # 更新上一次的游戏状态
             self.last_game_state = gsi_data.copy()
             
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            print(f"解析GSI数据失败: {e}")
+        except json.JSONDecodeError as e:
+            print(f"解析GSI JSON数据失败: {e}")
+        except Exception as e:
+            print(f"处理GSI数据时发生未知错误: {e}")
     
     def _check_bomb_events(self, gsi_data):
         """检查炸弹相关事件"""

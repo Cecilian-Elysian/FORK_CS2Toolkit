@@ -368,9 +368,22 @@ class CS2Tool(FluentWindow):
     def handle_gsi_data_from_thread(self, data_bytes):
         """Receives data from GSI thread and emits a signal to the main thread."""
         try:
-            game_state = json.loads(data_bytes.decode('utf-8'))
+            # 尝试多种编码方式解码数据
+            data_str = None
+            for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
+                try:
+                    data_str = data_bytes.decode(encoding)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if data_str is None:
+                # 如果所有编码都失败，使用错误处理方式
+                data_str = data_bytes.decode('utf-8', errors='ignore')
+            
+            game_state = json.loads(data_str)
             self.gsi_signal_emitter.data_received.emit(game_state)
-        except (json.JSONDecodeError, UnicodeDecodeError):
+        except (json.JSONDecodeError, Exception):
             pass # Ignore malformed data
 
     def handle_gsi_data_on_ui_thread(self, game_state):
@@ -689,7 +702,7 @@ class CS2Tool(FluentWindow):
               "https": None,
             }
             # 从服务器json文件读取版本信息
-            response = requests.get("CHECK_UPDATE_SERVER_ADDRESS", timeout=5, proxies=proxies)
+            response = requests.get("https://gitee.com/clover23333/CS2-ToolKit/raw/master/version.json", timeout=5, proxies=proxies)
             if response.status_code == 200:
                 latest_version_data = response.json()
                 latest_version = latest_version_data.get("version")
