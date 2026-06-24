@@ -1,6 +1,5 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from app.main_window import CS2Tool
 
 try:
     from ctypes import windll
@@ -9,8 +8,10 @@ try:
 except ImportError:
     pass
 
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    from app.main_window import CS2Tool
     window = CS2Tool()
     window.show()
     sys.exit(app.exec())

@@ -3,14 +3,13 @@ import os
 from .sound_player import SoundPlayer
 
 class GSISoundHandler:
-    """GSI音效事件处理器 - 处理游戏状态变化并播放相应音效"""
     
     def __init__(self, config_manager=None):
         self.config_manager = config_manager
         self.sound_player = SoundPlayer()
         self.current_gsi_pack = None
         self.last_game_state = {}
-        self.volume = 50  # 默认音量50%
+        self.volume = 50 
         
     def set_gsi_sound_pack(self, pack_path):
         """设置当前使用的GSI音效包"""
@@ -55,7 +54,7 @@ class GSISoundHandler:
             return
             
         try:
-            # 尝试多种编码方式解码数据
+ 
             gsi_data_str = None
             for encoding in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
                 try:
@@ -65,7 +64,6 @@ class GSISoundHandler:
                     continue
             
             if gsi_data_str is None:
-                # 如果所有编码都失败，使用错误处理方式
                 gsi_data_str = gsi_data_bytes.decode('utf-8', errors='ignore')
                 print("警告: GSI数据包含无法解码的字符，已忽略部分内容")
             

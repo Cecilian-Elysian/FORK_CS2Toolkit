@@ -1,13 +1,10 @@
 import os
-import cv2
-import uuid
 import json
+import threading
 from PySide6.QtWidgets import QApplication, QFileDialog, QListWidgetItem, QInputDialog
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QImage, QIcon, QDesktopServices
 from PySide6.QtCore import QUrl
-import requests
-import threading
 from qfluentwidgets import (setTheme, Theme, InfoBar, FluentWindow, NavigationItemPosition,
                            MessageBox)
 from app.logic.config_manager import ConfigManager
@@ -17,13 +14,15 @@ from app.logic.steam_utils import SteamUtils, PathValidator
 from app.logic.sound_replacer import SoundReplacer
 from app.logic.gsi_manager import GSIManager
 from app.ui.animations import AnimationManager
-from app.ui.pages import HomePage, VideoPage, FontPage, AboutPage, SoundPage, GSIPage
-
-from app.ui.gsi_sound_page import GSISoundPage
+from app.ui.pages.home_page import HomePage
 from app.ui.integrated_sound_page import IntegratedSoundPage
 from app.ui.components import VideoPresetWidget, FontPresetWidget, SoundPresetWidget
-from app.assets import app_icon,font_icon,home_icon,video_icon,info_icon,sun_icon,moon_icon,sound_icon,home_blue,sound_blue,video_blue,font_blue,info_blue,listener,listener_blue
-from app.assets import video_resources
+from app.assets import (app_icon, font_icon, home_icon, video_icon, info_icon,
+                        sun_icon, moon_icon, sound_icon, home_blue, sound_blue,
+                        video_blue, font_blue, info_blue, listener, listener_blue)
+
+# Qt 资源文件：提供所有 :/xxx.ico 图标路径
+import app.assets.video_resources  # noqa: F401
 
 class GsiSignalEmitter(QObject):
     data_received = Signal(dict)
@@ -34,7 +33,7 @@ class UpdateSignalEmitter(QObject):
 class CS2Tool(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.version = "1.2.1"
+        self.version = "1.2.2"
         self.is_dark_mode = False
         self.config_manager = ConfigManager()
         self.animation_manager = AnimationManager(self)
@@ -55,8 +54,12 @@ class CS2Tool(FluentWindow):
         self.init_ui()
 
         self.load_all_presets()
-        self.auto_detect_steam() 
         self.update_home_status()
+        # 延迟执行：让窗口先显示，500ms 后再检测 Steam 和检查更新
+        QTimer.singleShot(500, self._deferred_startup_tasks)
+
+    def _deferred_startup_tasks(self):
+        self.auto_detect_steam()
         self.check_for_updates()
 
     def init_window(self):
@@ -90,15 +93,20 @@ class CS2Tool(FluentWindow):
         )
 
     def init_ui(self):
+        from app.ui.pages.video_page import VideoPage
+        from app.ui.pages.font_page import FontPage
+        from app.ui.pages.about_page import AboutPage
+        from app.ui.pages.sound_page import SoundPage
+
         self.home_tab = HomePage(self)
         self.home_tab.setObjectName("home_tab")
-        
+
         self.video_tab = VideoPage(self)
         self.video_tab.setObjectName("video_tab")
-        
+
         self.font_tab = FontPage(self)
         self.font_tab.setObjectName("font_tab")
-        
+
         self.about_tab = AboutPage(self)
         self.about_tab.setObjectName("about_tab")
 
@@ -239,23 +247,48 @@ class CS2Tool(FluentWindow):
         else:
             self.show_error("路径不存在", f"文件夹 '{folder}' 不存在。")
 
-    def generate_thumbnail(self, video_path):
-        try:
-            vid = cv2.VideoCapture(video_path)
-            success, frame = vid.read()
-            vid.release()
-            if success:
-                thumbnail_dir = self.config_manager.get_thumbnail_dir()
-                thumbnail_name = f"{uuid.uuid4().hex}.png"
-                thumbnail_path = os.path.join(thumbnail_dir, thumbnail_name)
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                h, w, ch = frame_rgb.shape
-                q_img = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888)
-                q_img.save(thumbnail_path)
-                return thumbnail_path
-        except Exception as e:
-            print(f"生成缩略图失败: {e}")
-        return None
+    def _request_thumbnail(self, video_path, on_done):
+        """使用 QtMultimedia 异步截取视频第一帧作为缩略图（替代 cv2）"""
+        import uuid
+        from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
+        from PySide6.QtCore import QUrl
+
+        player = QMediaPlayer(self)
+        sink = QVideoSink(self)
+        player.setVideoSink(sink)
+        done = []
+
+        def _on_frame_changed(frame):
+            if done:
+                return
+            if not frame.isValid():
+                return
+            img = frame.toImage()
+            if img.isNull():
+                return
+            done.append(True)
+            try:
+                path = os.path.join(
+                    self.config_manager.get_thumbnail_dir(),
+                    f"{uuid.uuid4().hex}.png",
+                )
+                img.save(path)
+                on_done(path)
+            except Exception as e:
+                print(f"缩略图保存失败: {e}")
+                on_done(None)
+            finally:
+                player.stop()
+                player.deleteLater()
+                sink.deleteLater()
+
+        sink.videoFrameChanged.connect(_on_frame_changed)
+        player.setSource(QUrl.fromLocalFile(video_path))
+        player.play()
+        # 兜底：2秒后如果没截到帧则放弃
+        QTimer.singleShot(2000, lambda: (
+            player.stop(), player.deleteLater(), sink.deleteLater(), on_done(None)
+        ) if not done else None)
 
     def save_preset(self):
         video_path = self.video_tab.video_entry.text()
@@ -267,16 +300,17 @@ class CS2Tool(FluentWindow):
         if not ok or not name:
             return
 
-        thumbnail_path = self.generate_thumbnail(video_path)
-        if not thumbnail_path:
-            self.show_error("保存失败", "无法生成视频缩略图。")
-            return
+        def _on_thumbnail_ready(thumbnail_path):
+            if not thumbnail_path:
+                self.show_error("保存失败", "无法生成视频缩略图。")
+                return
+            self.config_manager.add_preset('video', name=name, video_path=video_path, thumbnail_path=thumbnail_path)
+            self.load_video_presets()
+            self.update_home_status()
+            self.update_recent_activity(f"保存视频预设: {name}")
+            self.show_success("成功", "视频预设已保存。")
 
-        self.config_manager.add_preset('video', name=name, video_path=video_path, thumbnail_path=thumbnail_path)
-        self.load_video_presets()
-        self.update_home_status()
-        self.update_recent_activity(f"保存视频预设: {name}")
-        self.show_success("成功", "视频预设已保存。")
+        self._request_thumbnail(video_path, _on_thumbnail_ready)
 
     def delete_preset_confirm(self, index):
         title = "确认删除"
@@ -695,6 +729,7 @@ class CS2Tool(FluentWindow):
         thread.start()
 
     def _update_check_thread(self):
+        import requests
         current_version = self.version
         try:
             proxies = {

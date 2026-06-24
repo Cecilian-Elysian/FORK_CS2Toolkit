@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Nuitka output
+dist/
+
+# IDE / tools
+.omc/
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
