@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMenu
 from PySide6.QtCore import Qt
 from qfluentwidgets import (SubtitleLabel, TitleLabel, LineEdit, PushButton, 
-                           RadioButton, ListWidget, PrimaryPushButton)
+                           RadioButton, ListWidget, PrimaryPushButton, SimpleCardWidget)
+from ..styles import UIStyles
 
 
 class VideoPage(QWidget):
@@ -18,40 +19,55 @@ class VideoPage(QWidget):
         layout.addWidget(TitleLabel("开屏动画替换"))
         layout.addSpacing(10)
 
-        layout.addWidget(SubtitleLabel("选择视频文件 (WEBM格式)"))
+        # 视频选择与替换区域 (Card)
+        file_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(file_card)
+        file_layout = QVBoxLayout(file_card)
+        file_layout.setContentsMargins(20, 20, 20, 20)
+        file_layout.setSpacing(10)
+
+        file_layout.addWidget(SubtitleLabel("选择视频文件 (WEBM格式) 与 替换版本"))
         self.video_entry = LineEdit()
         self.video_entry.setPlaceholderText("选择一个webm格式的视频文件")
         self.browse_video_btn = PushButton("选择文件")
         video_layout = QHBoxLayout()
         video_layout.addWidget(self.video_entry)
         video_layout.addWidget(self.browse_video_btn)
-        layout.addLayout(video_layout)
+        file_layout.addLayout(video_layout)
 
-        layout.addWidget(SubtitleLabel("选择替换版本"))
         version_layout = QHBoxLayout()
         self.intl_radio = RadioButton("国际服")
         self.cn_radio = RadioButton("国服")
         self.both_radio = RadioButton("两者都替换")
         self.both_radio.setChecked(True)
-        version_layout.addStretch()
         version_layout.addWidget(self.intl_radio)
         version_layout.addWidget(self.cn_radio)
         version_layout.addWidget(self.both_radio)
         version_layout.addStretch()
-        layout.addLayout(version_layout)
-
-        self.execute_btn = PrimaryPushButton("替换")
-        layout.addWidget(self.execute_btn)
         
-        layout.addWidget(SubtitleLabel("视频预设"))
+        self.execute_btn = PrimaryPushButton("执行替换")
+        version_layout.addWidget(self.execute_btn)
+        
+        file_layout.addLayout(version_layout)
+        layout.addWidget(file_card)
+        
+        # 预设区域 (Card)
+        preset_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(preset_card)
+        preset_layout = QVBoxLayout(preset_card)
+        preset_layout.setContentsMargins(20, 20, 20, 20)
+        preset_layout.setSpacing(10)
+
+        preset_layout.addWidget(SubtitleLabel("视频预设"))
         self.preset_list = ListWidget()
         self.preset_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.preset_list.customContextMenuRequested.connect(self.show_video_preset_context_menu)
         self.save_preset_btn = PushButton("保存当前视频为预设")
         preset_buttons_layout = QHBoxLayout()
         preset_buttons_layout.addWidget(self.save_preset_btn)
-        layout.addWidget(self.preset_list)
-        layout.addLayout(preset_buttons_layout)
+        preset_layout.addWidget(self.preset_list)
+        preset_layout.addLayout(preset_buttons_layout)
+        layout.addWidget(preset_card)
 
         self._connect_signals()
     

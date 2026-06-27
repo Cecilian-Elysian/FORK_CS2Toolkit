@@ -93,7 +93,20 @@ class FontReplacer:
                 f.write(conf_content)
         except Exception as e:
             raise Exception(f"更新42-repl-global.conf文件失败: {str(e)}")
-    
+            
+    def restore_font(self):
+        try:
+            fonts_dir = self.get_fonts_directory()
+            if fonts_dir and os.path.exists(fonts_dir):
+                self.clear_fonts_directory(fonts_dir)
+            
+            global_conf_path = self.get_global_conf_path()
+            if global_conf_path and os.path.exists(global_conf_path):
+                os.remove(global_conf_path)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def extract_font_name(self, font_path):
         # 从字体文件路径提取字体名称（去掉扩展名）
         filename = os.path.basename(font_path)

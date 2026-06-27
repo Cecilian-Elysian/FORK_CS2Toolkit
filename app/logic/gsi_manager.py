@@ -220,3 +220,6 @@ class GSIManager:
             self._server_thread.join(timeout=1)
         self._server_thread = None
         print("GSI服务器已停止。")
+
+    def is_running(self):
+        return self._server_thread is not None and self._server_thread.is_alive()

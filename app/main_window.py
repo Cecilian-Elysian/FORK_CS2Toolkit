@@ -6,20 +6,21 @@ from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QImage, QIcon, QDesktopServices
 from PySide6.QtCore import QUrl
 from qfluentwidgets import (setTheme, Theme, InfoBar, FluentWindow, NavigationItemPosition,
-                           MessageBox)
+                           MessageBox, FluentIcon as FIF, setThemeColor, CheckBox, MessageBoxBase, SubtitleLabel, BodyLabel)
+from PySide6.QtGui import QColor, QAction, QPixmap, QPainter, QImage
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu, QLabel, QGraphicsBlurEffect
 from app.logic.config_manager import ConfigManager
 from app.logic.font_replacer import FontReplacer
 from app.logic.video_replacer import VideoReplacer
 from app.logic.steam_utils import SteamUtils, PathValidator
 from app.logic.sound_replacer import SoundReplacer
 from app.logic.gsi_manager import GSIManager
+from app.logic.visual_handler import VisualHandler
 from app.ui.animations import AnimationManager
 from app.ui.pages.home_page import HomePage
 from app.ui.integrated_sound_page import IntegratedSoundPage
 from app.ui.components import VideoPresetWidget, FontPresetWidget, SoundPresetWidget
-from app.assets import (app_icon, font_icon, home_icon, video_icon, info_icon,
-                        sun_icon, moon_icon, sound_icon, home_blue, sound_blue,
-                        video_blue, font_blue, info_blue, listener, listener_blue)
+from app.assets import app_icon
 
 # Qt 资源文件：提供所有 :/xxx.ico 图标路径
 import app.assets.video_resources  # noqa: F401
@@ -33,11 +34,26 @@ class UpdateSignalEmitter(QObject):
 class CS2Tool(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.version = "1.2.2"
+        self.version = "1.3.0"
         self.is_dark_mode = False
+        self._force_quit = False
         self.config_manager = ConfigManager()
+        
+        # 1. 设定主题与品牌色
+        setThemeColor(QColor("#0078D4")) # 品牌蓝色
+        theme_val = self.config_manager.get("theme", "Auto")
+        if theme_val == "Light":
+            setTheme(Theme.LIGHT)
+            self.is_dark_mode = False
+        elif theme_val == "Dark":
+            setTheme(Theme.DARK)
+            self.is_dark_mode = True
+        else:
+            setTheme(Theme.AUTO)
+            
         self.animation_manager = AnimationManager(self)
         self.gsi_manager = GSIManager(config_manager=self.config_manager)
+        self.visual_handler = VisualHandler(self.config_manager)
         self.steam_path = "" 
         self.video_path = ""
         self.font_path = ""
@@ -50,68 +66,156 @@ class CS2Tool(FluentWindow):
         self.update_signal_emitter = UpdateSignalEmitter()
         self.update_signal_emitter.update_found.connect(self.show_update_dialog)
         
+        self.bg_label = QLabel(self)
+        self.bg_label.lower()
+        self.bg_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.bg_effect = QGraphicsBlurEffect()
+        self.bg_label.setGraphicsEffect(self.bg_effect)
+
         self.init_window()
         self.init_ui()
 
         self.load_all_presets()
         self.update_home_status()
+        self.apply_custom_background()
         # 延迟执行：让窗口先显示，500ms 后再检测 Steam 和检查更新
         QTimer.singleShot(500, self._deferred_startup_tasks)
+
+    def apply_custom_background(self):
+        if not hasattr(self, 'config_manager'):
+            return
+        bg_path = self.config_manager.get("bg_path", "")
+        if not bg_path or not os.path.exists(bg_path):
+            self.bg_label.hide()
+            return
+            
+        self.bg_label.show()
+        pixmap = QPixmap(bg_path)
+        
+        # apply brightness
+        bright = self.config_manager.get("bg_bright", 100) / 100.0
+        if bright != 1.0:
+            img = pixmap.toImage()
+            # Simple brightness adjustment
+            # Create a painter to overlay black or white with opacity
+            painter = QPainter(pixmap)
+            painter.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+            if bright < 1.0:
+                painter.fillRect(pixmap.rect(), QColor(0, 0, 0, int((1 - bright) * 255)))
+            else:
+                painter.fillRect(pixmap.rect(), QColor(255, 255, 255, int((bright - 1.0) * 255)))
+            painter.end()
+
+        # scale and set
+        bg_scale = self.config_manager.get("bg_scale", 0)
+        # 0: 等比缩放 (KeepAspectRatioByExpanding)
+        # 1: 填充 (IgnoreAspectRatio)
+        # 2: 拉伸 (IgnoreAspectRatio)
+        # 3: 居中 (KeepAspectRatio)
+        
+        aspect_ratio_mode = Qt.KeepAspectRatioByExpanding
+        if bg_scale == 1 or bg_scale == 2:
+            aspect_ratio_mode = Qt.IgnoreAspectRatio
+        elif bg_scale == 3:
+            aspect_ratio_mode = Qt.KeepAspectRatio
+            
+        scaled_pixmap = pixmap.scaled(self.size(), aspect_ratio_mode, Qt.SmoothTransformation)
+        
+        # 对于居中模式，我们需要创建一个与窗口一样大且透明的 QPixmap，然后将图片画在中间
+        if bg_scale == 3:
+            final_pixmap = QPixmap(self.size())
+            final_pixmap.fill(Qt.transparent)
+            painter = QPainter(final_pixmap)
+            x = (self.width() - scaled_pixmap.width()) // 2
+            y = (self.height() - scaled_pixmap.height()) // 2
+            painter.drawPixmap(x, y, scaled_pixmap)
+            painter.end()
+            self.bg_label.setPixmap(final_pixmap)
+        else:
+            self.bg_label.setPixmap(scaled_pixmap)
+            
+        self.bg_label.resize(self.size())
+        
+        # apply blur
+        blur_radius = self.config_manager.get("bg_blur", 0)
+        self.bg_effect.setBlurRadius(blur_radius)
+        
+        self.bg_label.lower()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.apply_custom_background()
 
     def _deferred_startup_tasks(self):
         self.auto_detect_steam()
         self.check_for_updates()
 
+        # Auto-start GSI Server on launch
+        if self.steam_path:
+            self.gsi_manager.set_cs2_path(self.steam_path)
+            self.gsi_manager.create_gsi_cfg()
+        self.gsi_manager.start_server()
+
     def init_window(self):
         self.setWindowTitle("CS2 工具箱")
         self.setWindowIcon(QIcon(":/app_icon.ico"))
-        self.resize(620, 780)
+        self.resize(750, 780)
         self.center()
+        
+        # 初始化系统托盘
+        self.tray_icon = QSystemTrayIcon(QIcon(":/app_icon.ico"), self)
+        self.tray_icon.setToolTip("CS2 工具箱")
+        self.tray_menu = QMenu(self)
+        
+        show_action = QAction("显示主窗口", self)
+        show_action.triggered.connect(self.show_window)
+        self.tray_menu.addAction(show_action)
+        
+        quit_action = QAction("完全退出", self)
+        quit_action.triggered.connect(self.quit_app)
+        self.tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+        self.tray_icon.show()
 
-        from PySide6.QtWidgets import QPushButton, QWidget
-        from PySide6.QtCore import QSize
-        self.theme_button = QPushButton()
-        self.theme_button.setIcon(QIcon(":/moon.ico"))
-        self.theme_button.setFixedSize(38, 30)
-        self.theme_button.setIconSize(QSize(18, 18))
-        self.theme_button.clicked.connect(self.toggle_theme)
+    def show_window(self):
+        self.show()
+        self.activateWindow()
         
-        button_container = QWidget()
-        button_container.setFixedSize(50, 30)
-        from PySide6.QtWidgets import QHBoxLayout
-        container_layout = QHBoxLayout(button_container)
-        container_layout.setContentsMargins(12, 0, 0, 0)
-        container_layout.addWidget(self.theme_button)
-        
-        self.update_theme_button_style()
-        
-        self.titleBar.hBoxLayout.insertWidget(
-            self.titleBar.hBoxLayout.count() - 1,
-            button_container,
-            0,
-            Qt.AlignVCenter
-        )
+    def quit_app(self):
+        self._force_quit = True
+        QApplication.quit()
+
+    def on_tray_icon_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+            self.show_window()
 
     def init_ui(self):
-        from app.ui.pages.video_page import VideoPage
-        from app.ui.pages.font_page import FontPage
+        from app.ui.pages.customize_page import CustomizePage
         from app.ui.pages.about_page import AboutPage
-        from app.ui.pages.sound_page import SoundPage
+        from app.ui.pages.setting_page import SettingPage
+        from app.ui.pages.visual_page import VisualPage
 
         self.home_tab = HomePage(self)
         self.home_tab.setObjectName("home_tab")
 
-        self.video_tab = VideoPage(self)
-        self.video_tab.setObjectName("video_tab")
+        self.customize_tab = CustomizePage(self)
+        self.customize_tab.setObjectName("customize_tab")
 
-        self.font_tab = FontPage(self)
-        self.font_tab.setObjectName("font_tab")
+        # Expose sub-pages for existing methods
+        self.video_tab = self.customize_tab.video_page
+        self.sound_tab = self.customize_tab.sound_page
+        self.font_tab = self.customize_tab.font_page
 
         self.about_tab = AboutPage(self)
         self.about_tab.setObjectName("about_tab")
 
-        self.sound_tab = SoundPage(self)
-        self.sound_tab.setObjectName("sound_tab")
+        self.setting_tab = SettingPage(self)
+        self.setting_tab.setObjectName("setting_tab")
+        
+        self.visual_tab = VisualPage(self.config_manager, self)
+        self.visual_tab.setObjectName("visual_tab")
 
         self.integrated_sound_page = IntegratedSoundPage(self.gsi_manager, self.config_manager, self)
         self.integrated_sound_page.setObjectName("integrated_sound_page")
@@ -120,16 +224,12 @@ class CS2Tool(FluentWindow):
         self.gsi_page = self.integrated_sound_page  
         self.gsi_sound_page = self.integrated_sound_page  
         
-
-        
-        self.addSubInterface(self.home_tab, QIcon(":/home_blue.ico"), "主页", NavigationItemPosition.TOP)
-        self.addSubInterface(self.video_tab, QIcon(":/video_blue.ico"), "开屏替换")
-        self.addSubInterface(self.sound_tab, QIcon(":/sound_blue.ico"), "启动音效替换")
-        self.addSubInterface(self.integrated_sound_page, QIcon(":/listener_blue.ico"), "GSI实时音效")
-        self.addSubInterface(self.font_tab, QIcon(":/font_blue.ico"), "字体替换")
-        self.addSubInterface(self.about_tab, QIcon(":/info_blue.ico"), "关于", NavigationItemPosition.BOTTOM)
-
-        setTheme(Theme.LIGHT)
+        self.addSubInterface(self.home_tab, FIF.HOME, "主页", NavigationItemPosition.TOP)
+        self.addSubInterface(self.customize_tab, FIF.BRUSH, "个性化替换")
+        self.addSubInterface(self.integrated_sound_page, FIF.HEADPHONE, "游戏内音效设置")
+        self.addSubInterface(self.visual_tab, FIF.VIEW, "游戏内视觉设置")
+        self.addSubInterface(self.setting_tab, FIF.SETTING, "设置", NavigationItemPosition.BOTTOM)
+        self.addSubInterface(self.about_tab, FIF.INFO, "关于", NavigationItemPosition.BOTTOM)
 
     def load_all_presets(self):
         self.load_video_presets()
@@ -142,71 +242,9 @@ class CS2Tool(FluentWindow):
         qr.moveCenter(cp)
         self.move(qr.topLeft())
 
-    def update_navigation_icons(self):
-        if self.is_dark_mode:
-            self.navigationInterface.widget(self.home_tab.objectName()).setIcon(QIcon(":/home.ico"))
-            self.navigationInterface.widget(self.video_tab.objectName()).setIcon(QIcon(":/video.ico"))
-            self.navigationInterface.widget(self.sound_tab.objectName()).setIcon(QIcon(":/sound.ico"))
-            self.navigationInterface.widget(self.gsi_tab.objectName()).setIcon(QIcon(":/listener.ico"))
-            self.navigationInterface.widget(self.font_tab.objectName()).setIcon(QIcon(":/font.ico"))
-            self.navigationInterface.widget(self.about_tab.objectName()).setIcon(QIcon(":/info.ico"))
-        else:
-            self.navigationInterface.widget(self.home_tab.objectName()).setIcon(QIcon(":/home_blue.ico"))
-            self.navigationInterface.widget(self.video_tab.objectName()).setIcon(QIcon(":/video_blue.ico"))
-            self.navigationInterface.widget(self.sound_tab.objectName()).setIcon(QIcon(":/sound_blue.ico"))
-            self.navigationInterface.widget(self.gsi_tab.objectName()).setIcon(QIcon(":/listener_blue.ico"))
-            self.navigationInterface.widget(self.font_tab.objectName()).setIcon(QIcon(":/font_blue.ico"))
-            self.navigationInterface.widget(self.about_tab.objectName()).setIcon(QIcon(":/info_blue.ico"))
 
-    def update_theme_button_style(self):
-        if self.is_dark_mode:
-            style = """
-                QPushButton {
-                    border: 1px solid rgba(255, 255, 255, 0.3);
-                    border-radius: 4px;
-                    background: rgba(255, 255, 255, 0.05);
-                    padding: 0px;
-                    qproperty-iconSize: 18px 18px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.15);
-                    border: 1px solid rgba(255, 255, 255, 0.5);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(255, 255, 255, 0.25);
-                }
-            """
-        else:
-            style = """
-                QPushButton {
-                    border: 1px solid rgba(0, 0, 0, 0.2);
-                    border-radius: 4px;
-                    background: rgba(0, 0, 0, 0.05);
-                    padding: 0px;
-                    qproperty-iconSize: 18px 18px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(0, 0, 0, 0.1);
-                    border: 1px solid rgba(0, 0, 0, 0.3);
-                }
-                QPushButton:pressed {
-                    background-color: rgba(0, 0, 0, 0.15);
-                }
-            """
-        self.theme_button.setStyleSheet(style)
 
-    def toggle_theme(self):
-        self.is_dark_mode = not self.is_dark_mode
-        
-        if self.is_dark_mode:
-            setTheme(Theme.DARK)
-            self.theme_button.setIcon(QIcon(":/sun.ico"))
-        else:
-            setTheme(Theme.LIGHT)
-            self.theme_button.setIcon(QIcon(":/moon.ico"))
-        
-        self.update_theme_button_style()
-        self.update_navigation_icons()
+
         
     
     def quick_detect_steam(self):
@@ -214,18 +252,11 @@ class CS2Tool(FluentWindow):
         self.auto_detect_steam()
 
     def update_recent_activity(self, activity):
-        self.home_tab.recent_activity_label.setText(f"最近: {activity}")
+        pass
 
     def update_home_status(self):
-        if hasattr(self, 'home_tab'):
-            if self.steam_path and os.path.exists(self.steam_path):
-                self.home_tab.steam_status_label.setText(f"CS2路径: {self.steam_path}")
-            else:
-                self.home_tab.steam_status_label.setText("CS2路径: 未设置")
-            
-            self.home_tab.video_count_label.setText(f"视频预设: {len(self.config_manager.get_presets('video'))} 个")
-            self.home_tab.sound_count_label.setText(f"音效预设: {len(self.config_manager.get_presets('sound'))} 个")
-            self.home_tab.font_count_label.setText(f"字体预设: {len(self.config_manager.get_presets('font'))} 个")
+        if hasattr(self, 'home_tab') and hasattr(self.home_tab, 'update_status'):
+            self.home_tab.update_status()
 
     def browse_video(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择视频文件", "", "WebM 视频 (*.webm)")
@@ -392,7 +423,9 @@ class CS2Tool(FluentWindow):
             replacer = VideoReplacer(steam_library_path)
             result = replacer.replace_video(video_path, version_type)
             if result["success"]:
-                self.update_recent_activity(f"替换开屏动画成功 ({result['replaced_count']}个文件)")
+                self.config_manager.set("current_video", os.path.basename(video_path))
+                self.config_manager.set("current_video_path", video_path)
+                self.update_home_status()
                 self.show_success("替换成功", f"开屏动画已成功替换！共处理 {result['replaced_count']} 个文件。")
             else:
                 self.show_error("替换失败", result['error'])
@@ -424,8 +457,9 @@ class CS2Tool(FluentWindow):
         """Handles GSI data on the main UI thread."""
         # 处理服务器启动失败
         if "error" in game_state and game_state["error"] == "server_start_failed":
-             self.integrated_sound_page.gsi_status_label.setText(f"错误: {game_state.get('message', '无法启动服务器')}")
-             self.integrated_sound_page.gsi_switch.setChecked(False)
+             if hasattr(self, 'home_tab'):
+                 self.home_tab.status_gsi_server.setText(f"错误: {game_state.get('message', '无法启动服务器')}")
+                 self.home_tab.status_gsi_server.setStyleSheet("color: red;")
              self.show_error("GSI服务启动失败", game_state.get('message', '无法启动服务器'))
              return
         
@@ -433,7 +467,9 @@ class CS2Tool(FluentWindow):
         if "success" in game_state and game_state["success"] == "server_started":
             port = game_state.get("port", "未知")
             host = game_state.get("host", "127.0.0.1")
-            self.integrated_sound_page.gsi_status_label.setText(f"服务运行中，正在监听CS2... (端口: {port})")
+            if hasattr(self, 'home_tab'):
+                self.home_tab.status_gsi_server.setText(f"服务运行中...")
+                self.home_tab.status_gsi_server.setStyleSheet("color: green;")
             self.show_success("GSI服务启动成功", f"服务已在 {host}:{port} 端口上开启")
             return
         
@@ -441,16 +477,20 @@ class CS2Tool(FluentWindow):
         if "error" in game_state:
             error_type = game_state["error"]
             if error_type == "server_unexpected_error":
-                self.integrated_sound_page.gsi_status_label.setText("错误: 服务器发生意外错误")
-                self.integrated_sound_page.gsi_switch.setChecked(False)
+                if hasattr(self, 'home_tab'):
+                    self.home_tab.status_gsi_server.setText("错误: 服务器发生意外错误")
+                    self.home_tab.status_gsi_server.setStyleSheet("color: red;")
                 self.show_error("GSI服务错误", game_state.get('message', '服务器发生意外错误'))
             return
         
         # 处理正常的游戏状态数据
         if not any(key in game_state for key in ["error", "success"]):
-            self.integrated_sound_page.gsi_status_label.setText("服务运行中，正在监听CS2...")
+            if hasattr(self, 'home_tab'):
+                self.home_tab.status_gsi_server.setText("服务运行中...")
+                self.home_tab.status_gsi_server.setStyleSheet("color: green;")
             # This is where the event matching logic will go
             self.integrated_sound_page.process_game_state(game_state)
+            self.visual_handler.process_gsi(game_state)
 
 
     def browse_font_file(self):
@@ -562,7 +602,9 @@ class CS2Tool(FluentWindow):
             result = replacer.replace_font(self.font_path, lambda msg: None)
 
             if result["success"]:
-                self.update_recent_activity(f"替换字体: {result['font_name']}")
+                self.config_manager.set("current_font", result['font_name'])
+                self.config_manager.set("current_font_path", self.font_path)
+                self.update_home_status()
                 self.show_success("替换成功", f"字体已成功替换为 {result['font_name']}。")
             else:
                 self.show_error("替换失败", result['error'])
@@ -614,7 +656,9 @@ class CS2Tool(FluentWindow):
             result = replacer.replace_sound(self.sound_path)
 
             if result["success"]:
-                self.update_recent_activity(f"替换音效: {result['sound_name']}")
+                self.config_manager.set("current_sound", result['sound_name'])
+                self.config_manager.set("current_sound_path", self.sound_path)
+                self.update_home_status()
                 self.show_success("替换成功", f"启动音效已成功替换为 {result['sound_name']}。")
             else:
                 self.show_error("替换失败", result['error'])
@@ -718,11 +762,38 @@ class CS2Tool(FluentWindow):
             self.apply_sound_preset(sound_presets[index])
 
     def open_sound_tutorial(self):
-        try:
-            QDesktopServices.openUrl(QUrl("https://cloverz.top/article/cs2-toolkit%E6%9B%BF%E6%8D%A2cs%E5%BC%80%E5%B1%8F%E9%9F%B3%E6%95%88%E6%95%99%E7%A8%8B"))
-            self.update_recent_activity("打开音效替换教程")
-        except Exception as e:
-            self.show_error("打开失败", f"无法打开教程网站：{str(e)}")
+        class TutorialDialog(MessageBoxBase):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.titleLabel = SubtitleLabel('替换教程', self)
+                self.viewLayout.addWidget(self.titleLabel)
+                
+                self.textLabel = BodyLabel(self)
+                self.textLabel.setOpenExternalLinks(True)
+                self.textLabel.setTextFormat(Qt.RichText)
+                self.textLabel.setText(
+                    "<h3>准备工作</h3>"
+                    "<p>准备好wav格式的音频文件，并使用转换软件将其转换为vsnd_c格式。<br/>"
+                    "转换软件下载地址：<a href='https://github.com/quad-damage/CS2_Sound_Converter'>CS2_Sound_Converter</a></p>"
+                    "<p>转换软件使用教程：打开下载的exe文件，将准备好的wav格式音频文件拖入，软件会自动将转换好的文件生成于wav音频文件所在的文件夹下。</p>"
+                    "<h3>替换启动音效</h3>"
+                    "<ol>"
+                    "<li>打开CS2 Toolkit</li>"
+                    "<li>点击“个性化替换” -> “启动音效”选项卡</li>"
+                    "<li>选择VSND_C文件，点击“替换启动音效”</li>"
+                    "<li>替换完成！</li>"
+                    "</ol>"
+                )
+                self.textLabel.setWordWrap(True)
+                self.viewLayout.addWidget(self.textLabel)
+                self.widget.setMinimumWidth(450)
+                
+                self.yesButton.setText('我知道了')
+                self.cancelButton.hide()
+
+        dialog = TutorialDialog(self)
+        dialog.exec()
+        self.update_recent_activity("查看音效替换教程")
         
     def check_for_updates(self):
         thread = threading.Thread(target=self._update_check_thread, daemon=True)
@@ -776,5 +847,42 @@ class CS2Tool(FluentWindow):
             self.show_warning("已忽略更新", "您拒绝更新到最新版本，在此版本中遇到任何问题请勿向作者报告！")
 
     def closeEvent(self, event):
-        self.gsi_manager.stop_server()
-        super().closeEvent(event)
+        if self._force_quit:
+            self.gsi_manager.stop_server()
+            super().closeEvent(event)
+            return
+
+        hide_prompt = self.config_manager.get("hide_close_prompt", False)
+        behavior = self.config_manager.get("close_behavior", "prompt")
+
+        if not hide_prompt and behavior == "prompt":
+            msg_box = MessageBox("退出程序", "您想如何处理关闭操作？", self)
+            msg_box.yesButton.setText("最小化到托盘")
+            msg_box.cancelButton.setText("完全退出")
+            
+            # 找到 MessageBox 中的 textLayout 或直接向 widget() 的 layout 中添加
+            checkbox = CheckBox("不再提示", msg_box.widget)
+            msg_box.textLayout.addWidget(checkbox)
+            
+            if msg_box.exec():
+                if checkbox.isChecked():
+                    self.config_manager.set("hide_close_prompt", True)
+                    self.config_manager.set("close_behavior", "tray")
+                    if hasattr(self, 'setting_tab'):
+                        self.setting_tab.closeCard.comboBox.setCurrentIndex(1)
+                self.hide()
+                event.ignore()
+            else:
+                if checkbox.isChecked():
+                    self.config_manager.set("hide_close_prompt", True)
+                    self.config_manager.set("close_behavior", "exit")
+                    if hasattr(self, 'setting_tab'):
+                        self.setting_tab.closeCard.comboBox.setCurrentIndex(2)
+                self.gsi_manager.stop_server()
+                super().closeEvent(event)
+        elif behavior == "tray":
+            self.hide()
+            event.ignore()
+        else:
+            self.gsi_manager.stop_server()
+            super().closeEvent(event)

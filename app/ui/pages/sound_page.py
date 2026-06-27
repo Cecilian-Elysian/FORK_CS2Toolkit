@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMenu
 from PySide6.QtCore import Qt
 from qfluentwidgets import (SubtitleLabel, TitleLabel, BodyLabel, LineEdit, PushButton, 
-                           ListWidget, PrimaryPushButton)
+                           ListWidget, PrimaryPushButton, SimpleCardWidget)
+from ..styles import UIStyles
 
 
 class SoundPage(QWidget):
@@ -18,46 +19,58 @@ class SoundPage(QWidget):
         layout.addWidget(TitleLabel("启动音效替换"))
         layout.addSpacing(10)
 
-        layout.addWidget(SubtitleLabel("选择音效文件 (vsnd_c格式)"))
+        # 音效文件选择与操作 (Card)
+        file_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(file_card)
+        file_layout = QVBoxLayout(file_card)
+        file_layout.setContentsMargins(20, 20, 20, 20)
+        file_layout.setSpacing(10)
+
+        file_layout.addWidget(SubtitleLabel("选择音效文件 (vsnd_c格式) 与 替换"))
         self.sound_entry = LineEdit()
         self.sound_entry.setPlaceholderText("选择音效文件路径")
         self.browse_sound_btn = PushButton("浏览文件")
         sound_layout = QHBoxLayout()
         sound_layout.addWidget(self.sound_entry)
         sound_layout.addWidget(self.browse_sound_btn)
-        layout.addLayout(sound_layout)
+        file_layout.addLayout(sound_layout)
 
+        info_layout = QHBoxLayout()
         self.sound_name_label = BodyLabel("音效名称: 未选择")
+        self.sound_name_label.setStyleSheet("color: #666666;")
         self.sound_filename_label = BodyLabel("文件名: 未选择")
-        layout.addWidget(self.sound_name_label)
-        layout.addWidget(self.sound_filename_label)
-
-        buttons_layout = QHBoxLayout()
+        self.sound_filename_label.setStyleSheet("color: #666666;")
+        info_layout.addWidget(self.sound_name_label)
+        info_layout.addWidget(self.sound_filename_label)
+        
         self.execute_btn = PrimaryPushButton("替换启动音效")
         self.restore_btn = PushButton("还原默认音效")
-        buttons_layout.addWidget(self.execute_btn)
-        buttons_layout.addWidget(self.restore_btn)
-        layout.addLayout(buttons_layout)
-
-        tutorial_layout = QHBoxLayout()
         self.tutorial_btn = PushButton("替换教程")
-        self.tutorial_btn.setToolTip("点击查看音效替换教程")
-        tutorial_layout.addStretch()
-        tutorial_layout.addWidget(self.tutorial_btn)
-        tutorial_layout.addStretch()
-        layout.addLayout(tutorial_layout)
-        layout.addSpacing(10)
+        
+        info_layout.addStretch()
+        info_layout.addWidget(self.execute_btn)
+        info_layout.addWidget(self.restore_btn)
+        info_layout.addWidget(self.tutorial_btn)
+        
+        file_layout.addLayout(info_layout)
+        layout.addWidget(file_card)
 
-        layout.addWidget(SubtitleLabel("音效预设"))
+        # 音效预设 (Card)
+        preset_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(preset_card)
+        preset_layout = QVBoxLayout(preset_card)
+        preset_layout.setContentsMargins(20, 20, 20, 20)
+        preset_layout.setSpacing(10)
+
+        preset_layout.addWidget(SubtitleLabel("音效预设"))
         self.sound_preset_list = ListWidget()
         self.sound_preset_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.sound_preset_list.customContextMenuRequested.connect(self.show_sound_preset_context_menu)
-        layout.addWidget(self.sound_preset_list)
-
-        layout.addStretch()
+        preset_layout.addWidget(self.sound_preset_list)
         
         self.save_sound_preset_btn = PushButton("保存当前音效为预设")
-        layout.addWidget(self.save_sound_preset_btn)
+        preset_layout.addWidget(self.save_sound_preset_btn)
+        layout.addWidget(preset_card)
 
         self._connect_signals()
 

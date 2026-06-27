@@ -1,50 +1,37 @@
 # UI样式管理模块
 
-
 class UIStyles:
-    # UI样式管理器
+    @staticmethod
+    def get_global_style():
+        return """
+        /* 卡片基础样式 */
+        #actionCard {
+            background-color: rgba(255, 255, 255, 0.6);
+            border: 1px solid rgba(0, 0, 0, 0.08);
+            border-radius: 8px;
+        }
+        #actionCard:hover {
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(0, 120, 212, 0.4);
+            margin-top: -2px; /* 悬停上浮动效需要代码配合，但可以增加边框发光 */
+        }
+        
+        /* 深色模式下的卡片样式 */
+        .Dark #actionCard {
+            background-color: rgba(255, 255, 255, 0.043);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .Dark #actionCard:hover {
+            background-color: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(0, 120, 212, 0.6);
+        }
+        
+        /* 自定义面板 */
+        #customPanel {
+            background-color: transparent;
+        }
+        """
 
     @staticmethod
-    def get_light_style():
-        # 获取浅色主题样式
-        return ""
-
-    @staticmethod
-    def get_dark_style():
-        # 获取深色主题样式
-        return ""
-
-    @staticmethod
-    def get_button_styles():
-        # 获取特殊按钮样式
-        return {}
-
-
-class StyleManager:
-    # 样式管理器
-
-    def __init__(self):
-        self.ui_styles = UIStyles()
-        self.is_dark_mode = False
-
-    def get_current_style(self):
-        # 获取当前主题样式
-        return ""
-
-    def toggle_theme(self):
-        # 切换主题
-        self.is_dark_mode = not self.is_dark_mode
-        return self.get_current_style()
-
-    def get_theme_button_text(self):
-        # 获取主题切换按钮文本
-        return "☀️" if self.is_dark_mode else "🌙"
-
-    def get_button_style(self, button_type):
-        # 获取特定按钮样式
-        return ""
-
-    def set_dark_mode(self, is_dark):
-        # 设置深色模式
-        self.is_dark_mode = is_dark
-        return self.get_current_style()
+    def apply_styles(widget):
+        widget.setStyleSheet(UIStyles.get_global_style())

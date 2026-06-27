@@ -1,7 +1,7 @@
 import os
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidgetItem
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QIcon
 from qfluentwidgets import StrongBodyLabel, BodyLabel, PushButton
 
 
@@ -15,6 +15,10 @@ class ActionCard(QWidget):
         
         self.mousePressEvent = self._mouse_press_event
         self._setup_ui(icon, title, description)
+        
+        # Apply custom style defined in styles.py
+        from app.ui.styles import UIStyles
+        UIStyles.apply_styles(self)
     
     def _mouse_press_event(self, event):
         if event.button() == Qt.LeftButton:
@@ -25,17 +29,23 @@ class ActionCard(QWidget):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(8)
 
-        from PySide6.QtGui import QIcon
+        from qfluentwidgets import FluentIconBase, IconWidget
         icon_label = QLabel()
         if isinstance(icon, QIcon):
             pixmap = icon.pixmap(32, 32)
             icon_label.setPixmap(pixmap)
+        elif isinstance(icon, FluentIconBase):
+            icon_widget = IconWidget(icon)
+            icon_widget.setFixedSize(32, 32)
+            layout.addWidget(icon_widget, 0, Qt.AlignCenter)
+            icon_label = None # 不再需要添加普通的 icon_label
         else:
             icon_label.setText(icon)
             
-        icon_label.setStyleSheet("font-size: 32px;")
-        icon_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(icon_label)
+        if icon_label:
+            icon_label.setStyleSheet("font-size: 32px;")
+            icon_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(icon_label)
         
         title_label = StrongBodyLabel(title)
         title_label.setAlignment(Qt.AlignCenter)
@@ -111,25 +121,29 @@ class SoundPresetWidget(QWidget):
         apply_btn.clicked.connect(lambda: apply_callback(self.preset))
         layout.addWidget(apply_btn)
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QFileDialog, QDialog
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QFileDialog, QDialog, QCompleter
 from PySide6.QtCore import Qt
-from qfluentwidgets import LineEdit, ComboBox, PushButton, FluentIcon, BodyLabel, ToolButton, Slider
+from qfluentwidgets import LineEdit, ComboBox, PushButton, FluentIcon, BodyLabel, ToolButton, Slider, EditableComboBox
 
 class EventConfigWidget(QWidget):
     # 用于配置单个GSI事件规则的自定义小部件
-    def __init__(self, parent=None, on_delete=None, on_change=None):
+    def __init__(self, parent=None, on_delete=None, on_change=None, on_edit=None):
         super().__init__(parent)
         self.on_delete = on_delete
         self.on_change = on_change
+        self.on_edit = on_edit
         self.sound_path = ""
+        self.is_advanced = False
+        self.sounds_1_5 = []
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
 
-        self.weapon_name_input = ComboBox()
+        self.weapon_name_input = EditableComboBox()
         self.weapon_name_input.setPlaceholderText("选择或输入武器名称")
 
         weapon_names_cn = [
+            "所有枪械",
             "AK-47", "M4A4", "M4A1-S消音版", "AWP",
             "沙漠之鹰", "格洛克18", "USP消音版", "P250",
             "FN57", "Tec-9", "CZ75-Auto", "P2000",
@@ -147,6 +161,7 @@ class EventConfigWidget(QWidget):
         
 
         weapon_names_en = [
+            "all_weapons",
             "weapon_ak47", "weapon_m4a1", "weapon_m4a1_silencer", "weapon_awp",
             "weapon_deagle", "weapon_glock", "weapon_usp_silencer", "weapon_p250",
             "weapon_fiveseven", "weapon_tec9", "weapon_cz75a", "weapon_p2000",
@@ -167,15 +182,19 @@ class EventConfigWidget(QWidget):
         self.weapon_en_to_cn = dict(zip(weapon_names_en, weapon_names_cn))
         self.weapon_name_input.addItems(weapon_names_cn)
         
+        # 添加搜索/自动补全功能
+        completer = QCompleter(weapon_names_cn, self)
+        completer.setFilterMode(Qt.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.weapon_name_input.setCompleter(completer)
+        
         self.event_type_combo = ComboBox()
-        # 分类添加事件类型
         event_items = [
             "--- 全局音效 ---",
             "全局击杀",
             "C4安装", 
             "C4拆除",
             "玩家死亡",
-            "刀杀",
             "--- 其他音效 ---",
             "切换到",
             "换弹", 
@@ -202,8 +221,12 @@ class EventConfigWidget(QWidget):
 
         self.delete_btn = ToolButton(FluentIcon.DELETE)
         self.delete_btn.clicked.connect(self._handle_delete)
+        
+        self.edit_btn = ToolButton(FluentIcon.EDIT)
+        self.edit_btn.clicked.connect(self._handle_edit)
 
-        layout.addWidget(BodyLabel("当"))
+        self.when_label = BodyLabel("当")
+        layout.addWidget(self.when_label)
         layout.addWidget(self.weapon_name_input, 1)
         layout.addWidget(self.event_type_combo)
         layout.addWidget(BodyLabel("时，播放"))
@@ -211,6 +234,7 @@ class EventConfigWidget(QWidget):
         layout.addWidget(BodyLabel("音量:"))
         layout.addWidget(self.volume_slider)
         layout.addWidget(self.volume_label)
+        layout.addWidget(self.edit_btn)
         layout.addWidget(self.delete_btn)
 
     def set_on_change(self, callback):
@@ -236,11 +260,15 @@ class EventConfigWidget(QWidget):
     def _handle_delete(self):
         if self.on_delete:
             self.on_delete(self)
+
+    def _handle_edit(self):
+        if self.on_edit:
+            self.on_edit(self)
     
     def _on_event_type_changed(self, index):
         # 当事件类型改变时调用
         # 防止选择分类标题
-        if index in [0, 6]:  # 分类标题索引
+        if index in [0, 5]:  # 分类标题索引
             # 如果选择了分类标题，跳转到下一个有效选项
             if index == 0:  # 全局音效分类
                 # 阻止信号触发，避免递归调用
@@ -249,25 +277,30 @@ class EventConfigWidget(QWidget):
                 self.event_type_combo.blockSignals(False)
                 # 手动调用更新逻辑
                 index = 1
-            elif index == 6:  # 其他音效分类
+            elif index == 5:  # 其他音效分类
                 # 阻止信号触发，避免递归调用
                 self.event_type_combo.blockSignals(True)
-                self.event_type_combo.setCurrentIndex(7)  # 跳转到"切换到"
+                self.event_type_combo.setCurrentIndex(6)  # 跳转到"切换到"
                 self.event_type_combo.blockSignals(False)
                 # 手动调用更新逻辑
-                index = 7
+                index = 6
         
-        if index in [1, 2, 3, 4, 5]:  # 全局击杀、C4安装、C4拆除、玩家死亡、刀杀（全局事件）
-            # 对于全局事件，设置武器名称为固定值并禁用
+        if index in [1, 2, 3, 4]:  # 全局击杀、C4安装、C4拆除、玩家死亡（全局事件）
+            # 对于全局事件，设置武器名称为固定值并隐藏
             self.weapon_name_input.setCurrentText("全局事件")
-            self.weapon_name_input.setEnabled(False)
-        elif index == 9:  # 使用武器击杀
+            self.when_label.hide()
+            self.weapon_name_input.hide()
+        elif index == 8:  # 使用武器击杀
             # 对于使用武器击杀事件，启用武器名称输入
+            self.when_label.show()
+            self.weapon_name_input.show()
             self.weapon_name_input.setEnabled(True)
             if self.weapon_name_input.currentText() == "全局事件":
                 self.weapon_name_input.setCurrentText("")
         else:
             # 对于武器事件，启用武器名称输入
+            self.when_label.show()
+            self.weapon_name_input.show()
             self.weapon_name_input.setEnabled(True)
             if self.weapon_name_input.currentText() == "全局事件":
                 self.weapon_name_input.setCurrentText("")
@@ -279,7 +312,7 @@ class EventConfigWidget(QWidget):
     def _update_ui_state_for_event_type(self, index):
         # 更新UI状态但不触发回调（用于set_config）
         # 防止选择分类标题
-        if index in [0, 6]:  # 分类标题索引
+        if index in [0, 5]:  # 分类标题索引
             # 如果选择了分类标题，跳转到下一个有效选项
             if index == 0:  # 全局音效分类
                 # 阻止信号触发，避免递归调用
@@ -287,24 +320,29 @@ class EventConfigWidget(QWidget):
                 self.event_type_combo.setCurrentIndex(1)  # 跳转到"全局击杀"
                 self.event_type_combo.blockSignals(False)
                 index = 1
-            elif index == 6:  # 其他音效分类
+            elif index == 5:  # 其他音效分类
                 # 阻止信号触发，避免递归调用
                 self.event_type_combo.blockSignals(True)
-                self.event_type_combo.setCurrentIndex(7)  # 跳转到"切换到"
+                self.event_type_combo.setCurrentIndex(6)  # 跳转到"切换到"
                 self.event_type_combo.blockSignals(False)
-                index = 7
+                index = 6
         
-        if index in [1, 2, 3, 4, 5]:  # 全局击杀、C4安装、C4拆除、玩家死亡、刀杀（全局事件）
-            # 对于全局事件，设置武器名称为固定值并禁用
+        if index in [1, 2, 3, 4]:  # 全局击杀、C4安装、C4拆除、玩家死亡（全局事件）
+            # 对于全局事件，设置武器名称为固定值并隐藏
             self.weapon_name_input.setCurrentText("全局事件")
-            self.weapon_name_input.setEnabled(False)
-        elif index == 9:  # 使用武器击杀
-            # 对于使用武器击杀事件，启用武器名称输入
+            self.when_label.hide()
+            self.weapon_name_input.hide()
+        elif index == 8:  # 使用武器击杀
+            # 对于使用武器击杀事件，显示武器名称输入
+            self.when_label.show()
+            self.weapon_name_input.show()
             self.weapon_name_input.setEnabled(True)
             if self.weapon_name_input.currentText() == "全局事件":
                 self.weapon_name_input.setCurrentText("")
         else:
-            # 对于武器事件，启用武器名称输入
+            # 对于武器事件，显示武器名称输入
+            self.when_label.show()
+            self.weapon_name_input.show()
             self.weapon_name_input.setEnabled(True)
             if self.weapon_name_input.currentText() == "全局事件":
                 self.weapon_name_input.setCurrentText("")
@@ -322,19 +360,25 @@ class EventConfigWidget(QWidget):
             2: "bomb_planted",   # C4安装
             3: "bomb_defused",   # C4拆除
             4: "player_death",   # 玩家死亡
-            5: "knife_kill",     # 刀杀
-            7: "active",         # 切换到
-            8: "reloading",      # 换弹
-            9: "weapon_kill"     # 使用武器击杀
+            6: "active",         # 切换到
+            7: "reloading",      # 换弹
+            8: "weapon_kill"     # 使用武器击杀
         }
         
+        # 强制为全局事件设置武器名称，防止意外覆盖
+        if event_index in [1, 2, 3, 4]:
+            weapon_name = "全局事件"
+            
         config = {
             "weapon": weapon_name,
             "event": event_mapping.get(event_index, "active"),
             "sound": getattr(self, 'sound_path', ''),
             "volume": self.volume_slider.value(),
-            "is_advanced": False
+            "is_advanced": self.is_advanced
         }
+        
+        if self.is_advanced:
+            config["sounds_1_5"] = self.sounds_1_5
         
         return config
 
@@ -363,10 +407,9 @@ class EventConfigWidget(QWidget):
                 "bomb_planted": 2,   # C4安装
                 "bomb_defused": 3,   # C4拆除
                 "player_death": 4,   # 玩家死亡
-                "knife_kill": 5,     # 刀杀
-                "active": 7,         # 切换到
-                "reloading": 8,      # 换弹
-                "weapon_kill": 9     # 使用武器击杀
+                "active": 6,         # 切换到
+                "reloading": 7,      # 换弹
+                "weapon_kill": 8     # 使用武器击杀
             }
             event_index = event_index_mapping.get(event_type, 1)  # 默认选择"全局击杀"
             # 阻止信号触发，避免在设置配置时触发_on_event_type_changed
@@ -377,16 +420,26 @@ class EventConfigWidget(QWidget):
             # 手动处理UI状态更新，不触发回调
             self._update_ui_state_for_event_type(event_index)
             
-            # 设置音效文件
-            sound_path = config.get("sound", "")
-            if sound_path:
-                self.sound_path = sound_path
-                self.sound_path_label.setText(os.path.basename(sound_path))
+            self.is_advanced = config.get("is_advanced", False)
+            self.sounds_1_5 = config.get("sounds_1_5", [])
             
-            # 设置音量
-            volume = config.get("volume", 50)
-            self.volume_slider.setValue(volume)
-            self._on_volume_changed(volume)
+            if self.is_advanced:
+                self.sound_path_label.setText("高阶配置 (点击右侧编辑)")
+                self.sound_path_label.setEnabled(False)
+                self.volume_slider.setEnabled(False)
+            else:
+                self.sound_path_label.setEnabled(True)
+                self.volume_slider.setEnabled(True)
+                # 设置音效文件
+                sound_path = config.get("sound", "")
+                if sound_path:
+                    self.sound_path = sound_path
+                    self.sound_path_label.setText(os.path.basename(sound_path))
+                
+                # 设置音量
+                volume = config.get("volume", 50)
+                self.volume_slider.setValue(volume)
+                self._on_volume_changed(volume)
         finally:
             # 恢复回调
             self.on_change = original_callback

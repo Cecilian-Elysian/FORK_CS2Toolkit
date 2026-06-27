@@ -19,10 +19,10 @@ class AboutPage(QWidget):
         about_text = BodyLabel()
         about_text.setWordWrap(True)
         about_text.setText("""
-这是一个为CS2(Counter-Strike 2)设计的多功能软件，可自定义开屏动画、音效、游戏字体与实时播放音效，其他功能还在积极开发中，敬请期待！(｡･ω･｡)<br><br>
+这是一个为CS2设计的多功能软件，可自定义开屏动画、音效、游戏字体与实时播放音效，其他功能还在积极开发中，敬请期待！(｡･ω･｡)<br><br>
 <b>版本: {version}</b><br>
-作者: Clover_233<br>
-作者主页: <a href="https://cloverz.top">https://cloverz.top</a><br>
+作者: Moon4Quartz<br>
+作者主页: <a href="https://space.bilibili.com/3537124972300357">https://space.bilibili.com/3537124972300357</a><br>
 """.format(version=self.parent.version))
         about_text.setOpenExternalLinks(True)
         layout.addWidget(about_text, 0, Qt.AlignTop)

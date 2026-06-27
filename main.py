@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QApplication
 
 try:
     from ctypes import windll
-    myappid = 'clover.cs2.toolkit'
+    myappid = 'Moon4Quartz.cs2.toolkit'
     windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 except ImportError:
     pass

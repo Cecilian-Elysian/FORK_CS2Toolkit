@@ -10,17 +10,26 @@ class SoundPlayer:
         self._players = []  # 存储多个播放器实例
         self._max_players = 10  # 最大同时播放数量
 
-    def play_sound(self, sound_path, volume=None):
+    def play_sound(self, sound_path, volume=None, channel="default"):
         """
         播放指定路径的音效文件。
         支持 mp3, wav 等 QtMultimedia 支持的格式。
         每次播放都会创建新的播放器实例，支持同时播放多个音效。
+        可以通过指定 channel 来实现同类音效的打断（如切枪打断上一次切枪）。
         :param sound_path: 音效文件路径
         :param volume: 音量 (0-100)，如果为None则使用默认音量50%
+        :param channel: 音效通道分类，同通道的新音效会打断旧音效
         """
         if not os.path.exists(sound_path):
             print(f"音效文件不存在: {sound_path}")
             return
+
+        # 如果指定了专属通道，则停止该通道下正在播放的所有旧音效，实现打断机制
+        if channel != "default":
+            for player_info in self._players:
+                if player_info.get('channel') == channel and not player_info['finished']:
+                    player_info['player'].stop()
+                    player_info['finished'] = True
 
         # 清理已完成播放的播放器
         self._cleanup_finished_players()
@@ -50,7 +59,8 @@ class SoundPlayer:
         player_info = {
             'player': player,
             'audio_output': audio_output,
-            'finished': False
+            'finished': False,
+            'channel': channel
         }
         self._players.append(player_info)
         

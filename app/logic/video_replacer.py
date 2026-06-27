@@ -98,7 +98,21 @@ class VideoReplacer:
                 "success": False,
                 "error": str(e)
             }
-    
+            
+    def restore_video(self):
+        try:
+            target_dir = self.get_target_directory()
+            if not target_dir:
+                return {"success": False, "error": "无法获取视频目录"}
+            filenames = self.get_target_filenames("both")
+            for filename in filenames:
+                dest = os.path.join(target_dir, filename)
+                if os.path.exists(dest):
+                    os.remove(dest)
+            return {"success": True}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
     def get_version_display_name(self, version_type):
         # 获取版本类型的显示名称
         version_names = {

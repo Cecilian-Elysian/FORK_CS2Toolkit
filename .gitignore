@@ -14,3 +14,10 @@ dist/
 # OS
 Thumbs.db
 .DS_Store
+
+# App Data
+configs/
+imported/
+thumbnails/
+preconfig.json
+CS2Toolkit/

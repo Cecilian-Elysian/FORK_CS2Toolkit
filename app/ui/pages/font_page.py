@@ -1,7 +1,8 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMenu
 from PySide6.QtCore import Qt
 from qfluentwidgets import (SubtitleLabel, TitleLabel, BodyLabel, LineEdit, PushButton, 
-                           ListWidget, PrimaryPushButton)
+                           ListWidget, PrimaryPushButton, SimpleCardWidget)
+from ..styles import UIStyles
 
 
 class FontPage(QWidget):
@@ -18,33 +19,49 @@ class FontPage(QWidget):
         layout.addWidget(TitleLabel("游戏字体替换"))
         layout.addSpacing(10)
 
-        layout.addWidget(SubtitleLabel("选择字体文件 (TTF格式)"))
+        # 字体文件选择 (Card)
+        file_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(file_card)
+        file_layout = QVBoxLayout(file_card)
+        file_layout.setContentsMargins(20, 20, 20, 20)
+        file_layout.setSpacing(10)
+
+        file_layout.addWidget(SubtitleLabel("选择字体文件 (TTF格式)"))
         self.font_entry = LineEdit()
         self.font_entry.setPlaceholderText("选择一个ttf格式的字体文件")
         self.browse_font_btn = PushButton("选择字体文件")
         font_file_layout = QHBoxLayout()
         font_file_layout.addWidget(self.font_entry)
         font_file_layout.addWidget(self.browse_font_btn)
-        layout.addLayout(font_file_layout)
+        file_layout.addLayout(font_file_layout)
 
         self.font_name_label = BodyLabel("字体名称: 未选择")
+        self.font_name_label.setStyleSheet("color: #666666;")
         self.font_filename_label = BodyLabel("文件名: 未选择")
-        layout.addWidget(self.font_name_label)
-        layout.addWidget(self.font_filename_label)
+        self.font_filename_label.setStyleSheet("color: #666666;")
+        file_layout.addWidget(self.font_name_label)
+        file_layout.addWidget(self.font_filename_label)
 
         self.execute_font_btn = PrimaryPushButton("替换字体")
-        layout.addWidget(self.execute_font_btn)
+        file_layout.addWidget(self.execute_font_btn)
+        layout.addWidget(file_card)
 
-        layout.addWidget(SubtitleLabel("字体预设"))
+        # 字体预设 (Card)
+        preset_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(preset_card)
+        preset_layout = QVBoxLayout(preset_card)
+        preset_layout.setContentsMargins(20, 20, 20, 20)
+        preset_layout.setSpacing(10)
+
+        preset_layout.addWidget(SubtitleLabel("字体预设"))
         self.font_preset_list = ListWidget()
         self.font_preset_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.font_preset_list.customContextMenuRequested.connect(self.show_font_preset_context_menu)
-        layout.addWidget(self.font_preset_list)
-
-        layout.addStretch()
+        preset_layout.addWidget(self.font_preset_list)
         
         self.save_font_preset_btn = PushButton("保存当前字体为预设")
-        layout.addWidget(self.save_font_preset_btn)
+        preset_layout.addWidget(self.save_font_preset_btn)
+        layout.addWidget(preset_card)
 
         self._connect_signals()
     

@@ -1,19 +1,22 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
     QPushButton, QSlider, QGroupBox, QGridLayout, QMessageBox,
-    QListWidgetItem, QMenu
+    QListWidgetItem, QMenu, QApplication, QFileDialog
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QIcon
 from qfluentwidgets import (
     FluentIcon as FIF, PushButton, ComboBox, Slider, 
     TitleLabel, SubtitleLabel, BodyLabel, InfoBar, InfoBarPosition,
-    SwitchButton, ListWidget, PrimaryPushButton
+    SwitchButton, ListWidget, PrimaryPushButton, SimpleCardWidget
 )
 import os
+import time
 from .components import EventConfigWidget
 from .event_dialog import AddEventDialog
 from ..logic.sound_player import SoundPlayer
+from .styles import UIStyles
+
 
 class IntegratedSoundPage(QWidget):
     # 音效管理页面 - 实时音效配置
@@ -66,35 +69,23 @@ class IntegratedSoundPage(QWidget):
     
     def create_realtime_sound_section(self, parent_layout):
         # 创建实时音效配置板块
-        # 实时音效组
-        realtime_group = QGroupBox("实时音效配置")
-        realtime_layout = QVBoxLayout(realtime_group)
+        realtime_card = SimpleCardWidget(self)
+        UIStyles.apply_styles(realtime_card)
+        realtime_layout = QVBoxLayout(realtime_card)
+        realtime_layout.setContentsMargins(20, 20, 20, 20)
         realtime_layout.setSpacing(15)
-        
-        # 服务控制
-        server_control_layout = QHBoxLayout()
-        server_control_layout.addWidget(SubtitleLabel("监听服务"))
-        self.gsi_switch = SwitchButton()
-        self.gsi_switch.setText("关闭")
-        server_control_layout.addWidget(self.gsi_switch)
-        server_control_layout.addStretch()
-        realtime_layout.addLayout(server_control_layout)
-        
-        self.gsi_status_label = BodyLabel("服务已停止。")
-        realtime_layout.addWidget(self.gsi_status_label)
-        
-        # GSI配置文件生成
-        cfg_layout = QHBoxLayout()
-        cfg_layout.addWidget(BodyLabel("启用GSI:"))
-        self.create_cfg_btn = PushButton("生成配置文件")
-        cfg_layout.addWidget(self.create_cfg_btn)
-        cfg_layout.addStretch()
-        realtime_layout.addLayout(cfg_layout)
         
         # 事件配置
         realtime_layout.addWidget(SubtitleLabel("事件配置"))
         
         self.event_list = ListWidget()
+        self.event_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.event_list.customContextMenuRequested.connect(self.show_event_context_menu)
+        # 启用拖拽排序功能
+        self.event_list.setDragDropMode(ListWidget.InternalMove)
+        self.event_list.setDefaultDropAction(Qt.MoveAction)
+        # 监听拖拽结束（顺序改变）事件，自动保存
+        self.event_list.model().rowsMoved.connect(self._on_list_order_changed)
         realtime_layout.addWidget(self.event_list)
         
         # 事件操作按钮
@@ -106,56 +97,34 @@ class IntegratedSoundPage(QWidget):
         add_event_layout.addWidget(self.add_event_btn)
         realtime_layout.addLayout(add_event_layout)
         
-        parent_layout.addWidget(realtime_group)
+        parent_layout.addWidget(realtime_card)
     
 
     
     def _connect_signals(self):
         # 连接信号
         # 实时音效信号
-        self.gsi_switch.checkedChanged.connect(self.toggle_gsi_server)
-        self.create_cfg_btn.clicked.connect(self.create_gsi_config_file)
         self.add_event_btn.clicked.connect(self.show_add_event_dialog)
         self.save_events_btn.clicked.connect(self.save_events)
     
     # ==================== 实时音效相关方法 ====================
     
-    def toggle_gsi_server(self, checked):
-        # 切换GSI服务器状态
-        if checked:
-            self.gsi_switch.setText("运行中")
-            self.gsi_status_label.setText("服务正在启动...")
-            if self.gsi_manager:
-                self.gsi_manager.start_server()
-        else:
-            self.gsi_switch.setText("关闭")
-            self.gsi_status_label.setText("服务已停止。")
-            if self.gsi_manager:
-                self.gsi_manager.stop_server()
-    
-    def create_gsi_config_file(self):
-        # 创建GSI配置文件
-        if not self.parent or not hasattr(self.parent, 'steam_path'):
-            InfoBar.warning("路径缺失", "请先在主页设置CS2路径。", parent=self)
-            return
-            
-        cs2_path = self.parent.steam_path
-        if not cs2_path:
-            InfoBar.warning("路径缺失", "请先在主页设置CS2路径。", parent=self)
-            return
-        
-        if self.gsi_manager:
-            self.gsi_manager.set_cs2_path(cs2_path)
-            success, message = self.gsi_manager.create_gsi_cfg()
-            if success:
-                InfoBar.success("成功", message, parent=self)
-            else:
-                InfoBar.error("失败", message, parent=self)
-    
     def show_add_event_dialog(self):
         # 显示添加事件对话框
         dialog = AddEventDialog(self)
-        if dialog.exec() == QMessageBox.Accepted:
+        # 根据当前应用主题设置弹窗样式
+        from qfluentwidgets import isDarkTheme
+        if not isDarkTheme():
+            dialog.widget.setStyleSheet("""
+                QDialog {
+                    background-color: white;
+                }
+                QLabel {
+                    color: black;
+                }
+            """)
+        
+        if dialog.exec():
             config = dialog.get_config()
             if config:
                 # 保存新事件配置到config_manager
@@ -185,13 +154,37 @@ class IntegratedSoundPage(QWidget):
         item = QListWidgetItem()
         # 根据参数决定是否设置on_change回调
         on_change = self._on_event_config_changed if enable_change_callback else None
-        widget = EventConfigWidget(parent=None, on_delete=self.delete_event_widget, on_change=on_change)
+        widget = EventConfigWidget(parent=None, on_delete=self.delete_event_widget, on_change=on_change, on_edit=self.edit_event_widget)
         if config:
             widget.set_config(config)
         item.setSizeHint(widget.sizeHint())
         self.event_list.addItem(item)
         self.event_list.setItemWidget(item, widget)
     
+    def edit_event_widget(self, widget):
+        config = widget.get_config()
+        dialog = AddEventDialog(self)
+        
+        from qfluentwidgets import isDarkTheme
+        if not isDarkTheme():
+            dialog.widget.setStyleSheet("""
+                QDialog {
+                    background-color: white;
+                }
+                QLabel {
+                    color: black;
+                }
+            """)
+            
+        dialog.set_config(config)
+        dialog.titleLabel.setText('编辑事件')
+        
+        if dialog.exec():
+            new_config = dialog.get_config()
+            if new_config:
+                widget.set_config(new_config)
+                self.save_events()
+
     def delete_event_widget(self, widget):
         # 删除事件配置组件
         # 遍历列表找到对应的QListWidgetItem
@@ -204,7 +197,14 @@ class IntegratedSoundPage(QWidget):
         # 重新加载事件列表以更新分类显示
         self.load_events()
     
-    def save_events(self):
+    def _on_list_order_changed(self, parent, start, end, destination, row):
+        """当用户拖拽改变列表顺序时触发"""
+        # 由于列表中包含了分类标题(QLabel)和实际的事件(EventConfigWidget)，
+        # 拖拽后直接按当前的列表顺序重新提取并保存配置即可。
+        self.save_events(silent=True)
+        # 不调用 load_events，否则拖拽的动画和焦点会丢失或闪烁
+
+    def save_events(self, silent=False):
         # 保存事件配置
         if not self.config_manager:
             return
@@ -223,16 +223,55 @@ class IntegratedSoundPage(QWidget):
         self.config_manager.config['gsi_events'] = events
         self.config_manager.save_config()
         
-        InfoBar.success(
-            title="保存成功",
-            content=f"已保存 {len(events)} 个音效事件配置",
-            orient=Qt.Horizontal,
-            isClosable=True,
-            position=InfoBarPosition.TOP,
-            duration=2000,
-            parent=self
-        )
+        if not silent:
+            # 重新加载列表以确保分类正确，且UI状态与保存的数据一致
+            self.load_events()
+            
+            InfoBar.success(
+                title="保存成功",
+                content=f"已保存 {len(events)} 个音效事件配置",
+                orient=Qt.Horizontal,
+                isClosable=True,
+                position=InfoBarPosition.TOP,
+                duration=2000,
+                parent=self
+            )
+        
+        # 更新主页状态
+        if self.parent and hasattr(self.parent, 'update_home_status'):
+            self.parent.update_home_status()
+            
+        self.has_unsaved_changes = False
     
+    def show_event_context_menu(self, pos):
+        item = self.event_list.itemAt(pos)
+        if not item:
+            return
+            
+        widget = self.event_list.itemWidget(item)
+        if not hasattr(widget, 'get_config'):
+            return
+            
+        menu = QMenu(self)
+        duplicate_action = menu.addAction("复制事件")
+        duplicate_action.triggered.connect(lambda: self._duplicate_event(widget))
+        
+        menu.exec(self.event_list.mapToGlobal(pos))
+        
+    def _duplicate_event(self, widget):
+        config = widget.get_config()
+        
+        if self.config_manager:
+            events = self.config_manager.config.get('gsi_events', [])
+            events.append(config)
+            self.config_manager.config['gsi_events'] = events
+            self.config_manager.save_config()
+            
+            # 重新加载事件列表以正确分类新事件
+            self.load_events()
+            
+        InfoBar.success("复制成功", "已成功复制该事件。", parent=self)
+
     def load_events(self):
         # 加载事件配置
         if not self.config_manager:
@@ -262,34 +301,20 @@ class IntegratedSoundPage(QWidget):
             self.config_manager.config['gsi_events'] = events
             self.config_manager.save_config()
         
-        # 按事件类型分类
-        global_events = []  # 全局音效
-        other_events = []   # 其他音效
+        # 移除强制的分类排序，完全尊重 JSON 文件中的顺序
+        # 这样用户拖拽保存的顺序在重新启动/加载时才能保持原样
+        
+        # 只在有事件时显示分类标题（为了兼容之前的显示效果，如果用户喜欢拖拽排序，其实不加标题更好，
+        # 但为了UI美观，我们现在取消强行分类，只在最顶部加一个统一的提示，或者保持原样按原数组顺序渲染）
+        
+        # 为了实现真正的任意拖拽排序，我们不再将其硬性拆分为 global_events 和 other_events。
+        # 否则一调用 load_events，刚刚拖拽的顺序又会被强行归类打乱。
         
         for event_config in events:
-            event_type = event_config.get('event', '')
-            weapon_name = event_config.get('weapon', '')
+            self.add_new_event_widget(event_config, enable_change_callback=False)
             
-            # 全局音效：事件类型为全局事件或武器名称为"全局事件"
-            if (event_type in ['kill', 'bomb_planted', 'bomb_defused', 'player_death', 'knife_kill'] or 
-                weapon_name == '全局事件'):
-                global_events.append(event_config)
-            else:
-                other_events.append(event_config)
-        
-        # 只在有事件时显示分类标题
-        if global_events:
-            self._add_category_header("全局音效")
-            for event_config in global_events:
-                self.add_new_event_widget(event_config, enable_change_callback=False)
-        
-        if other_events:
-            self._add_category_header("其他音效")
-            for event_config in other_events:
-                self.add_new_event_widget(event_config, enable_change_callback=False)
-        
         # 如果没有任何事件，显示提示信息
-        if not global_events and not other_events:
+        if not events:
             self._add_empty_hint()
         else:
             # 加载完成后，为所有事件组件启用回调
@@ -328,17 +353,17 @@ class IntegratedSoundPage(QWidget):
         from PySide6.QtCore import Qt
         
         item = QListWidgetItem()
-        hint_label = QLabel("暂无事件配置，点击上方'添加新事件'按钮开始配置")
+        hint_label = QLabel("暂无事件配置，点击\"添加新事件\"按钮开始配置")
         hint_label.setAlignment(Qt.AlignCenter)
         hint_label.setStyleSheet("""
             QLabel {
-                font-size: 12px;
-                color: #999;
+                font-size: 13px;
+                color: #888888;
                 padding: 20px;
-                background-color: #fafafa;
-                border: 1px dashed #ddd;
-                border-radius: 4px;
+                border: 1px dashed #666666;
+                border-radius: 6px;
                 margin: 10px;
+                background: transparent;
             }
         """)
         
@@ -387,7 +412,37 @@ class IntegratedSoundPage(QWidget):
         if not player: 
             return
 
-        if player.get('activity') != 'playing':
+        # Get observation status properly using the existing logic
+        spectarget = player.get('spectarget')
+        activity = player.get('activity', '')
+        player_state = player.get('state', {})
+        is_alive = player_state.get('health', 0) > 0
+        observer_slot = player.get('observer_slot')
+        
+        provider = game_state.get('provider', {})
+        provider_steamid = provider.get('steamid')
+        player_steamid = player.get('steamid')
+        
+        has_valid_team = player.get('team', '') in ['T', 'CT']
+
+        # More robust spectator detection:
+        # If the provider's steamid doesn't match the player's steamid in the payload, 
+        # it definitively means we are spectating someone else.
+        is_observing = False
+        if provider_steamid and player_steamid and provider_steamid != player_steamid:
+            is_observing = True
+        elif spectarget is not None or activity == 'spectating' or activity != 'playing' or not has_valid_team:
+            is_observing = True
+
+        # Do not process any events if we are observing someone else
+        if is_observing:
+            # We still want to update our internal tracking state to not falsely trigger on respawn
+            match_stats = player.get('match_stats', {})
+            self.previous_kills = match_stats.get('kills', 0)
+            self.previous_deaths = match_stats.get('deaths', 0)
+            self.previous_round_phase = game_state.get('round', {}).get('phase', '')
+            self.previous_observing_state = is_observing
+            self.previous_is_alive = is_alive
             return
 
         # 处理武器相关事件
@@ -397,57 +452,94 @@ class IntegratedSoundPage(QWidget):
         self._process_bomb_and_kill_events(game_state, player)
     
     def _process_weapon_events(self, game_state: dict, player: dict):
-        """处理武器相关事件"""
+        # 检查武器事件
         weapons = player.get('weapons', {})
         if not weapons:
             return
         
-        for i in range(self.event_list.count()):
-            item = self.event_list.item(i)
-            widget = self.event_list.itemWidget(item)
-            
-            # 跳过分类标题（QLabel），只处理 EventConfigWidget
-            if not hasattr(widget, 'get_config'):
-                continue
+        # 找出当前正在触发 'active' 或 'reloading' 状态转换的武器
+        triggered_events = [] # 元素格式: (武器名称, 事件类型)
+        
+        # 记录最后开火的武器（可能不准，因为GSI可能漏掉firing状态）
+        # 同时记录 active 武器的历史，用于处理切枪延迟
+        current_active = None
+        for weapon_slot, weapon_info in weapons.items():
+            weapon_name = weapon_info.get('name')
+            current_state = weapon_info.get('state')
+            if current_state == 'firing':
+                self._last_fired_weapon = weapon_name
+            if current_state == 'active':
+                current_active = weapon_name
                 
-            config = widget.get_config()
-            
-            weapon_name = config.get('weapon')
-            event_type = config.get('event')
-            sound_path = config.get('sound')
-            
-            if not all([weapon_name, event_type, sound_path]):
-                continue
-            
-            # 查找匹配的武器
-            weapon_data = None
-            for weapon_key, weapon_info in weapons.items():
-                if weapon_info.get('name') == weapon_name:
-                    weapon_data = weapon_info
-                    break
-            
-            if not weapon_data:
-                continue
-            
-            current_state = weapon_data.get('state')
-            state_key = f"{weapon_name}:{event_type}"
-            previous_state = self.previous_weapon_states.get(state_key)
-            
-            should_trigger = False
-            
-            if event_type == 'active':
-                if current_state == 'active' and previous_state == 'holstered':
-                    should_trigger = True
-            elif event_type == 'reloading':
-                if current_state == 'reloading' and previous_state != 'reloading':
-                    should_trigger = True
-            
-            if should_trigger:
-                if os.path.exists(sound_path):
-                    volume = config.get('volume', 50)
-                    self.sound_player.play_sound(sound_path, volume)
+            # 检查状态转换
+            for e_type in ['active', 'reloading']:
+                state_key = f"{weapon_name}:{e_type}"
+                prev_state = self.previous_weapon_states.get(state_key)
                 
-            self.previous_weapon_states[state_key] = current_state
+                if e_type == 'active':
+                    if current_state == 'active' and prev_state == 'holstered':
+                        triggered_events.append((weapon_name, 'active'))
+                elif e_type == 'reloading':
+                    if current_state == 'reloading' and prev_state != 'reloading':
+                        triggered_events.append((weapon_name, 'reloading'))
+                        
+                # 更新状态
+                self.previous_weapon_states[state_key] = current_state
+                
+        # 更新 active 武器历史
+        if current_active:
+            if not hasattr(self, '_current_active_weapon'):
+                self._current_active_weapon = current_active
+                self._last_active_weapon = current_active
+                self._last_switch_time = time.time()
+            elif self._current_active_weapon != current_active:
+                self._last_active_weapon = self._current_active_weapon
+                self._current_active_weapon = current_active
+                self._last_switch_time = time.time()
+                
+        if not triggered_events:
+            return
+            
+        # 对于每一个触发了转换的事件，去事件列表中寻找最匹配的配置
+        # 优先级：精确匹配 > "所有枪械"
+        for t_weapon, t_event in triggered_events:
+            best_sound = None
+            best_volume = 50
+            matched_specificity = 0 # 0=未匹配, 1=匹配到"所有枪械", 2=精确匹配特定武器
+            
+            for i in range(self.event_list.count()):
+                item = self.event_list.item(i)
+                widget = self.event_list.itemWidget(item)
+                
+                if not hasattr(widget, 'get_config'):
+                    continue
+                    
+                config = widget.get_config()
+                c_weapon = config.get('weapon')
+                c_event = config.get('event')
+                c_sound = config.get('sound')
+                
+                if not all([c_weapon, c_event, c_sound]):
+                    continue
+                    
+                if c_event == t_event:
+                    if c_weapon == t_weapon:
+                        # 精确匹配，最高优先级
+                        if matched_specificity < 2:
+                            best_sound = c_sound
+                            best_volume = config.get('volume', 50)
+                            matched_specificity = 2
+                    elif c_weapon == 'all_weapons':
+                        # "所有枪械"匹配，次级优先级
+                        if matched_specificity < 1:
+                            best_sound = c_sound
+                            best_volume = config.get('volume', 50)
+                            matched_specificity = 1
+                            
+            # 如果找到了合适的音效，则播放
+            if best_sound and os.path.exists(best_sound):
+                self.sound_player.play_sound(best_sound, best_volume, channel="weapon")
+                print(f"[GSI音效] 触发武器事件音效: {t_weapon} ({t_event}), 音量: {best_volume}%")
     
     def _process_bomb_and_kill_events(self, game_state: dict, player: dict):
         """处理炸弹、击杀和死亡事件"""
@@ -458,10 +550,11 @@ class IntegratedSoundPage(QWidget):
             self.previous_deaths = player.get('match_stats', {}).get('deaths', 0)
         if not hasattr(self, 'previous_bomb_state'):
             self.previous_bomb_state = game_state.get('round', {}).get('bomb', '')
-        
+            
         # 获取当前状态信息
-        current_kills = player.get('match_stats', {}).get('kills', 0)
-        current_deaths = player.get('match_stats', {}).get('deaths', 0)
+        match_stats = player.get('match_stats', {})
+        current_kills = match_stats.get('kills', 0)
+        current_deaths = match_stats.get('deaths', 0)
         observer_slot = player.get('observer_slot')
         current_round_phase = game_state.get('round', {}).get('phase', 'unknown')
         player_state = player.get('state', {})
@@ -576,41 +669,15 @@ class IntegratedSoundPage(QWidget):
             print(f"[GSI音效] 玩家血量: {current_health}, 队伍: {player_team}, 回合阶段: {round_info.get('phase', 'unknown')}")
             
         # 检查基于存活状态的死亡事件（从存活变为死亡）
+        # 移除这个，因为它会与 based_on_deaths 逻辑重复触发
+        # 仅保留 self.round_kills = 0 的逻辑
         if not is_alive and self.previous_is_alive:
-            print(f"[GSI音效] 检测到基于存活状态的死亡事件: 存活状态从 {self.previous_is_alive} 变为 {is_alive}")
-            # 玩家死亡时重置击杀数
             print(f"[GSI音效] 玩家死亡，重置连杀数: {self.round_kills} -> 0")
             self.round_kills = 0
-            
-            # 触发基于存活状态的死亡音效
-            death_sound_found = False
-            for i in range(self.event_list.count()):
-                item = self.event_list.item(i)
-                widget = self.event_list.itemWidget(item)
-                
-                # 跳过分类标题（QLabel），只处理 EventConfigWidget
-                if not hasattr(widget, 'get_config'):
-                    continue
-                    
-                config = widget.get_config()
-                
-                event_type = config.get('event')
-                sound_path = config.get('sound')
-                
-                if event_type == 'player_death' and sound_path and os.path.exists(sound_path):
-                    volume = config.get('volume', 50)
-                    self.sound_player.play_sound(sound_path, volume)
-                    print(f"[GSI音效] 触发基于存活状态的死亡音效, 音量: {volume}%")
-                    death_sound_found = True
-                    break
-            
-            if not death_sound_found:
-                print(f"[GSI音效] 未找到可用的死亡音效配置（基于存活状态检测）")
         
         # 检查玩家死亡事件
         if current_deaths > self.previous_deaths:
             print(f"[GSI音效] 确认死亡事件，开始查找死亡音效")
-            # 玩家死亡时重置击杀数
             print(f"[GSI音效] 玩家死亡，重置连杀数: {self.round_kills} -> 0")
             self.round_kills = 0
             
@@ -633,7 +700,7 @@ class IntegratedSoundPage(QWidget):
                 
                 if event_type == 'player_death' and sound_path and os.path.exists(sound_path):
                     volume = config.get('volume', 50)
-                    self.sound_player.play_sound(sound_path, volume)
+                    self.sound_player.play_sound(sound_path, volume, channel="death")
                     print(f"[GSI音效] 触发玩家死亡音效, 音量: {volume}%")
                     death_sound_found = True
                     break
@@ -649,7 +716,15 @@ class IntegratedSoundPage(QWidget):
             
             print(f"[GSI音效] 击杀事件: 总击杀数 {self.previous_kills} -> {current_kills}, 本次击杀增量: {kill_increment}, 当前回合连杀数: {self.round_kills}")
             
-            # 获取当前武器信息
+            # 获取产生击杀时的实际武器 (如果有的话)
+            weapon_used = None
+            if hasattr(self, 'previous_weapon_states'):
+                # 尝试从之前的武器状态中找到导致击杀的武器
+                # 但是 GSI 没有直接提供 "用什么武器击杀" 的字段
+                # 所以我们还是只能获取当前 active 的武器
+                pass
+            
+            # 获取当前手中 active 的武器
             current_weapon = None
             weapons = player.get('weapons', {})
             for weapon_info in weapons.values():
@@ -657,26 +732,42 @@ class IntegratedSoundPage(QWidget):
                     current_weapon = weapon_info.get('name')
                     break
             
-            # 检查是否是刀杀
-            is_knife_kill = False
-            if current_weapon and ('knife' in current_weapon.lower() or 'bayonet' in current_weapon.lower()):
-                is_knife_kill = True
-                print(f"[GSI音效] 检测到刀杀: {current_weapon}")
+            # TODO: CS2 GSI 实际上有严重的时间差缺陷
+            # 当用A武器击杀后瞬间切枪，收到击杀事件(kills+1)时的 active 武器已经是新武器了
             
-            # 优先级：刀杀 > 特定武器击杀 > 全局击杀
+            # 解决方案：使用历史记录来纠正
+            last_fired_weapon = getattr(self, '_last_fired_weapon', None)
+            
+            # 方案1: 如果有明确的最后开火武器，且当前是刀，纠正为最后开火武器
+            if current_weapon and ('knife' in current_weapon.lower() or 'bayonet' in current_weapon.lower()):
+                if last_fired_weapon and not ('knife' in last_fired_weapon.lower() or 'bayonet' in last_fired_weapon.lower()):
+                    print(f"[GSI音效] 纠正切刀击杀误判(方案1): 当前武器是刀，但判定击杀武器为最后开火的 {last_fired_weapon}")
+                    current_weapon = last_fired_weapon
+            
+            # 方案2: 更加强大的历史推断。如果我们在过去 0.5 秒内切换了武器，
+            # 那么这次击杀有极大概率是由"上一个"手持武器造成的（狙击枪盲狙切刀、步枪点射切刀、刀人后切枪）
+            last_switch_time = getattr(self, '_last_switch_time', 0)
+            last_active_weapon = getattr(self, '_last_active_weapon', None)
+            
+            if last_active_weapon and (time.time() - last_switch_time) < 0.5:
+                print(f"[GSI音效] 纠正切枪击杀误判(方案2): 检测到极限切枪操作。当前 {current_weapon} -> 纠正为 {last_active_weapon}")
+                current_weapon = last_active_weapon
+            
+            # 优先级：特定武器击杀 > 全局击杀
             played_sound = False
             
-            # 1. 尝试播放刀杀音效
-            if is_knife_kill:
-                played_sound = self._play_kill_sound('knife_kill', '全局事件', self.round_kills)
-            
-            # 2. 如果没有播放刀杀音效，尝试播放特定武器击杀音效
+            # 1. 尝试播放特定武器击杀音效 (必须满足武器名称精确匹配)
             if not played_sound and current_weapon:
                 played_sound = self._play_kill_sound('weapon_kill', current_weapon, self.round_kills)
+                
+            # 1.5. 尝试播放 "所有枪械" 击杀音效 (如果特定武器没匹配到)
+            if not played_sound and current_weapon:
+                played_sound = self._play_kill_sound('weapon_kill', 'all_weapons', self.round_kills)
             
-            # 3. 如果都没有播放，则播放全局击杀音效
+            # 2. 如果都没有播放，或者根本没有匹配的特定武器音效，则播放全局击杀音效
             if not played_sound:
-                self._play_kill_sound('kill', '全局事件', self.round_kills)
+                # 传入 None 而不是 '全局事件'，让底层只匹配 'kill' 类型
+                self._play_kill_sound('kill', None, self.round_kills)
         
         # 处理C4事件
         self._handle_bomb_events(game_state, skip_non_death_events)
@@ -716,19 +807,38 @@ class IntegratedSoundPage(QWidget):
             config_event = config.get('event')
             config_weapon = config.get('weapon')
             
+            # 初始化 sound_path 避免 UnboundLocalError
+            sound_path = None
+            volume = 50
+            
             # 检查事件类型和武器匹配
             # 对于全局击杀事件，只检查事件类型，不检查武器名称
-            if config_event == event_type and (event_type == 'kill' or config_weapon == weapon_name):
-                print(f"[GSI音效] 找到匹配的配置!")
-                sound_path = config.get('sound')
-                if sound_path and os.path.exists(sound_path):
+            if config_event == event_type:
+                # 当查找 weapon_kill 时，匹配传入的武器名称 (可能是特定武器，也可能是 'all_weapons')
+                if event_type == 'kill' or (event_type == 'weapon_kill' and config_weapon == weapon_name):
+                    print(f"[GSI音效] 找到匹配的配置!")
+                    
+                    sound_path = config.get('sound')
                     volume = config.get('volume', 50)
-                    self.sound_player.play_sound(sound_path, volume)
-                    print(f"[GSI音效] 触发击杀音效: {weapon_name}, 连杀数: {kill_count}, 音量: {volume}%")
-                    played = True
-                    break
-                else:
-                    print(f"[GSI音效] 击杀音效文件不存在: {sound_path}")
+                    
+                    if config.get('is_advanced', False):
+                        sounds_1_5 = config.get('sounds_1_5', [])
+                        # kill_count 是 1-5，对应索引 0-4
+                        # 如果超过5杀，继续播放5杀音效
+                        idx = min(kill_count - 1, 4)
+                        if idx >= 0 and idx < len(sounds_1_5):
+                            adv_sound_path = sounds_1_5[idx].get('path')
+                            if adv_sound_path and os.path.exists(adv_sound_path):
+                                sound_path = adv_sound_path
+                                volume = sounds_1_5[idx].get('volume', 50)
+                    
+                    if sound_path and os.path.exists(sound_path):
+                        self.sound_player.play_sound(sound_path, volume, channel="kill")
+                        print(f"[GSI音效] 触发击杀音效: {weapon_name if event_type == 'weapon_kill' else '全局击杀'}, 连杀数: {kill_count}, 音量: {volume}%")
+                        played = True
+                        break
+                    else:
+                        print(f"[GSI音效] 击杀音效文件不存在: {sound_path}")
         
         if not played:
             print(f"[GSI音效] 未找到匹配的击杀音效: {event_type}, {weapon_name}, 连杀数: {kill_count}")
@@ -759,7 +869,7 @@ class IntegratedSoundPage(QWidget):
                     
                     if event_type == 'bomb_planted' and sound_path and os.path.exists(sound_path):
                         volume = config.get('volume', 50)
-                        self.sound_player.play_sound(sound_path, volume)
+                        self.sound_player.play_sound(sound_path, volume, channel="bomb")
                         print(f"[GSI音效] 触发C4安装音效, 音量: {volume}%")
                         break
             elif current_bomb_state == 'defused' or (self.previous_bomb_state == 'planted' and current_bomb_state == ''):
@@ -779,6 +889,6 @@ class IntegratedSoundPage(QWidget):
                     
                     if event_type == 'bomb_defused' and sound_path and os.path.exists(sound_path):
                         volume = config.get('volume', 50)
-                        self.sound_player.play_sound(sound_path, volume)
+                        self.sound_player.play_sound(sound_path, volume, channel="bomb")
                         print(f"[GSI音效] 触发C4拆除音效, 音量: {volume}%")
                         break
