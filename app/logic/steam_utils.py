@@ -78,7 +78,7 @@ class SteamUtils:
         library_folders = SteamUtils.get_steam_library_folders(steam_path)
         for library_path in library_folders:
             cs2_path = os.path.join(library_path, "steamapps\\common\\Counter-Strike Global Offensive")
-            if os.path.exists(cs2_path):
+            if os.path.exists(cs2_path) and os.path.exists(os.path.join(cs2_path, "game", "bin", "win64", "cs2.exe")):
                 return cs2_path
         return None
     
@@ -98,7 +98,7 @@ class SteamUtils:
         if not SteamUtils.validate_steam_path(steam_path):
             return None
         cs2_path = os.path.join(steam_path, "steamapps\\common\\Counter-Strike Global Offensive")
-        if os.path.exists(cs2_path):
+        if os.path.exists(cs2_path) and os.path.exists(os.path.join(cs2_path, "game", "bin", "win64", "cs2.exe")):
             return cs2_path
         return SteamUtils.find_cs2_in_libraries(steam_path)
     
