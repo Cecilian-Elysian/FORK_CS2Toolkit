@@ -375,9 +375,17 @@ class CS2Tool(FluentWindow):
         QTimer.singleShot(10, self._perform_steam_detection)
 
     def _perform_steam_detection(self):
+        # 优先使用配置中保存的路径
+        saved_steam_path = self.config_manager.get("steam_path")
+        if saved_steam_path and os.path.exists(saved_steam_path) and os.path.exists(os.path.join(saved_steam_path, "game", "bin", "win64", "cs2.exe")):
+            self.steam_path = saved_steam_path
+            self.update_home_status()
+            return
+            
         cs2_path = SteamUtils.find_cs2_install_path()
         if cs2_path and os.path.exists(cs2_path):
             self.steam_path = cs2_path
+            self.config_manager.set("steam_path", cs2_path)
             self.update_home_status()
             self.update_recent_activity("自动检测CS2路径成功")
             InfoBar.success("成功", "已自动检测到CS2安装路径。", parent=self, duration=3000)
@@ -392,6 +400,7 @@ class CS2Tool(FluentWindow):
             # Basic validation: check for cs2.exe
             if os.path.exists(os.path.join(path, "game", "bin", "win64", "cs2.exe")):
                 self.steam_path = path
+                self.config_manager.set("steam_path", path)
                 self.update_home_status()
                 self.update_recent_activity(f"手动设置CS2路径为: {path}")
             else:
