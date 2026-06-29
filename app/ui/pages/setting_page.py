@@ -417,6 +417,10 @@ class SettingPage(ScrollArea):
         if not hasattr(self.parent_window, 'gsi_manager'): return
         mgr = self.parent_window.gsi_manager
         
+        # 确保 steam_path 被传递到 mgr
+        if hasattr(self.parent_window, 'steam_path') and self.parent_window.steam_path:
+            mgr.set_cs2_path(self.parent_window.steam_path)
+            
         # 尝试使用输入的端口更新
         try:
             new_port = int(self.gsi_port_input.text().strip())
