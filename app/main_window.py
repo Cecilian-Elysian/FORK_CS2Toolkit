@@ -150,10 +150,7 @@ class CS2Tool(FluentWindow):
         self.auto_detect_steam()
         self.check_for_updates()
 
-        # Auto-start GSI Server on launch
-        if self.steam_path:
-            self.gsi_manager.set_cs2_path(self.steam_path)
-            self.gsi_manager.create_gsi_cfg()
+        # 启动 GSI Server（路径和配置生成已转移到 _perform_steam_detection 和 browse_steam 中处理）
         self.gsi_manager.start_server()
         
         # 更新设置页的按钮状态
@@ -386,6 +383,10 @@ class CS2Tool(FluentWindow):
         if saved_steam_path and os.path.exists(saved_steam_path) and os.path.exists(os.path.join(saved_steam_path, "game", "bin", "win64", "cs2.exe")):
             self.steam_path = saved_steam_path
             self.update_home_status()
+            
+            # 如果是优先从配置加载的，也要顺便给 GSI 生成一次配置，防止用户重装了游戏但路径没变
+            self.gsi_manager.set_cs2_path(self.steam_path)
+            self.gsi_manager.create_gsi_cfg()
             return
             
         cs2_path = SteamUtils.find_cs2_install_path()
@@ -393,6 +394,11 @@ class CS2Tool(FluentWindow):
             self.steam_path = cs2_path
             self.config_manager.set("steam_path", cs2_path)
             self.update_home_status()
+            
+            # 检测到新路径后自动生成配置
+            self.gsi_manager.set_cs2_path(self.steam_path)
+            self.gsi_manager.create_gsi_cfg()
+            
             self.update_recent_activity("自动检测CS2路径成功")
             InfoBar.success("成功", "已自动检测到CS2安装路径。", parent=self, duration=3000)
         else:
@@ -408,6 +414,11 @@ class CS2Tool(FluentWindow):
                 self.steam_path = path
                 self.config_manager.set("steam_path", path)
                 self.update_home_status()
+                
+                # 手动选择后也自动生成一次
+                self.gsi_manager.set_cs2_path(self.steam_path)
+                self.gsi_manager.create_gsi_cfg()
+                
                 self.update_recent_activity(f"手动设置CS2路径为: {path}")
             else:
                 self.show_error("路径无效", "所选目录不是有效的CS2安装目录。")
