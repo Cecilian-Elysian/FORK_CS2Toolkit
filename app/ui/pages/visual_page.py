@@ -87,10 +87,15 @@ class VisualConfigDialog(MessageBoxBase):
             action_layout = QHBoxLayout()
             action_layout.addWidget(BodyLabel("新回合动作:"))
             self.action_combo = ComboBox(self)
-            self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)"])
+            self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)", "静音浏览器 (通过系统音量混音器)"])
             
             action_val = self.visual_config.get('boss_key_action', 'none')
-            idx = 0 if action_val == 'none' else 1
+            if action_val == 'none':
+                idx = 0
+            elif action_val == 'close':
+                idx = 1
+            else:
+                idx = 2
             self.action_combo.setCurrentIndex(idx)
             self.action_combo.currentIndexChanged.connect(self._on_action_changed)
             action_layout.addWidget(self.action_combo, 1)
@@ -121,7 +126,12 @@ class VisualConfigDialog(MessageBoxBase):
         self.config_manager.set('visual', self.visual_config)
 
     def _on_action_changed(self, index):
-        val = 'none' if index == 0 else 'close'
+        if index == 0:
+            val = 'none'
+        elif index == 1:
+            val = 'close'
+        else:
+            val = 'mute'
         self.visual_config['boss_key_action'] = val
         self.config_manager.set('visual', self.visual_config)
 

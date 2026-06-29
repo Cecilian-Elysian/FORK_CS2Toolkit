@@ -16,6 +16,7 @@ class VisualSignals(QObject):
     show_kill_icon = Signal(str)
     open_boss_key_url = Signal(str, int)  # url, delay(ms)
     close_browser = Signal()
+    mute_browser = Signal()
 
 class OverlayWindow(QWidget):
     def __init__(self):
@@ -288,6 +289,7 @@ class VisualHandler(QObject):
         self.signals.restore_game.connect(self._restore_cs2)
         self.signals.open_boss_key_url.connect(self._open_boss_key_url)
         self.signals.close_browser.connect(self._close_browser)
+        self.signals.mute_browser.connect(self._mute_browser)
         
         self.is_flashed = False
         self.is_dead = False
@@ -389,6 +391,8 @@ class VisualHandler(QObject):
                 self.signals.restore_game.emit()
                 if self.boss_key_action == 'close':
                     self.signals.close_browser.emit()
+                elif self.boss_key_action == 'mute':
+                    self.signals.mute_browser.emit()
             if self.death_media_enabled:
                 self.signals.hide_death.emit()
                 
@@ -401,6 +405,8 @@ class VisualHandler(QObject):
                 self.signals.restore_game.emit()
                 if self.boss_key_action == 'close':
                     self.signals.close_browser.emit()
+                elif self.boss_key_action == 'mute':
+                    self.signals.mute_browser.emit()
                 
         # 4. 击杀图标处理
         if self.kill_icon_enabled and not is_observing:
@@ -456,3 +462,15 @@ class VisualHandler(QObject):
         browsers = ["msedge.exe", "chrome.exe", "firefox.exe", "360se.exe", "iexplore.exe", "sogouexplorer.exe"]
         for b in browsers:
             subprocess.run(["taskkill", "/F", "/IM", b], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+            
+    def _mute_browser(self):
+        try:
+            from pycaw.pycaw import AudioUtilities
+            sessions = AudioUtilities.GetAllSessions()
+            browsers = ["msedge.exe", "chrome.exe", "firefox.exe", "360se.exe", "iexplore.exe", "sogouexplorer.exe"]
+            for session in sessions:
+                volume = session.SimpleAudioVolume
+                if session.Process and session.Process.name() in browsers:
+                    volume.SetMute(1, None)
+        except Exception as e:
+            print(f"静音浏览器失败: {e}")
