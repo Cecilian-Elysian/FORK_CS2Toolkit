@@ -485,7 +485,16 @@ class SettingPage(ScrollArea):
         # 总结
         summary = "\n\n".join(results)
         if all_passed:
-            self.parent_window.show_success("检测通过", f"未发现明显异常，如果仍无声音，请尝试验证游戏完整性。\n\n检测报告:\n{summary}")
+            self.parent_window.show_success(
+                "检测通过", 
+                f"未发现明显异常！如果游戏内依然没有声音或击杀图标：\n"
+                f"1. 确认没有在完美平台等第三方对战平台中覆盖了云端配置（可尝试裸连Steam测试）。\n"
+                f"2. 确认在游戏设置内【未开启】“简化音频”或“静音后台音频”。\n"
+                f"3. 尝试以【管理员身份】运行 CS2 Toolkit。\n"
+                f"4. 在Steam中右键CS2 -> 属性 -> 验证游戏文件的完整性。\n\n"
+                f"检测报告:\n{summary}",
+                duration=15000
+            )
         else:
             self.parent_window.show_error("检测到异常", f"检测报告:\n{summary}")
 

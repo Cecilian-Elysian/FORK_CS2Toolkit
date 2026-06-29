@@ -65,7 +65,7 @@ class IntegratedSoundPage(QWidget):
         header_layout = QHBoxLayout()
         header_layout.addWidget(TitleLabel("实时音效管理"))
         
-        notice_label = BodyLabel("💡 首次使用或修改端口后需【重启游戏】生效。\n⚠️ 注意：游戏热身阶段可能不会发送数据，属正常现象。")
+        notice_label = BodyLabel("💡首次使用或修改端口后需【重启游戏】生效。\n注意：热身阶段可能无效，正常现象。")
         notice_label.setStyleSheet("color: #d4a373; font-size: 12px;")
         header_layout.addStretch()
         header_layout.addWidget(notice_label)
