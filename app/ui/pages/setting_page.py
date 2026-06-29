@@ -323,6 +323,32 @@ class SettingPage(ScrollArea):
         # 4. 危险操作组
         self.dangerGroup = SettingCardGroup("高级与危险操作", self.view)
         
+        self.gsiControlCard = SettingCard(
+            FIF.WIFI,
+            "GSI 监听服务管理",
+            "手动管理后台服务状态与通信端口",
+            self.dangerGroup
+        )
+        self.gsi_port_input = LineEdit(self.gsiControlCard)
+        self.gsi_port_input.setPlaceholderText("端口(默认3000)")
+        self.gsi_port_input.setFixedWidth(100)
+        if hasattr(self.parent_window, 'gsi_manager'):
+            self.gsi_port_input.setText(str(self.parent_window.gsi_manager.current_port))
+            
+        self.gsi_toggle_btn = PushButton("启动服务", self.gsiControlCard)
+        self.gsi_regen_btn = PushButton("重新生成GSI配置", self.gsiControlCard)
+        
+        self.gsiControlCard.hBoxLayout.addWidget(self.gsi_port_input, 0, Qt.AlignmentFlag.AlignRight)
+        self.gsiControlCard.hBoxLayout.addSpacing(8)
+        self.gsiControlCard.hBoxLayout.addWidget(self.gsi_toggle_btn, 0, Qt.AlignmentFlag.AlignRight)
+        self.gsiControlCard.hBoxLayout.addSpacing(8)
+        self.gsiControlCard.hBoxLayout.addWidget(self.gsi_regen_btn, 0, Qt.AlignmentFlag.AlignRight)
+        self.gsiControlCard.hBoxLayout.addSpacing(16)
+        
+        self.gsi_toggle_btn.clicked.connect(self._on_gsi_toggle)
+        self.gsi_regen_btn.clicked.connect(self._on_gsi_regen)
+        self.dangerGroup.addSettingCard(self.gsiControlCard)
+        
         self.resetCard = SettingCard(
             FIF.DELETE,
             "重置所有设置",
@@ -346,6 +372,47 @@ class SettingPage(ScrollArea):
     def _show_bg_dialog(self):
         dialog = BackgroundSettingDialog(self.config_manager, self.parent_window, self)
         dialog.exec()
+
+    def _on_gsi_toggle(self):
+        if not hasattr(self.parent_window, 'gsi_manager'): return
+        mgr = self.parent_window.gsi_manager
+        if mgr.is_running():
+            mgr.stop_server()
+            self.gsi_toggle_btn.setText("启动服务")
+            self.gsi_port_input.setEnabled(True)
+            self.parent_window.show_info("GSI 服务已停止", "监听服务已手动关闭")
+            self.parent_window.update_home_status()
+        else:
+            try:
+                new_port = int(self.gsi_port_input.text().strip())
+                mgr.current_port = new_port
+            except ValueError:
+                self.parent_window.show_error("端口错误", "请输入有效的数字端口")
+                return
+            
+            mgr.start_server()
+            self.gsi_toggle_btn.setText("停止服务")
+            self.gsi_port_input.setEnabled(False)
+            self.parent_window.show_info("提示", "服务已尝试启动，请注意必须在重新生成CFG并重启游戏后，新端口才会生效。")
+            self.parent_window.update_home_status()
+
+    def _on_gsi_regen(self):
+        if not hasattr(self.parent_window, 'gsi_manager'): return
+        mgr = self.parent_window.gsi_manager
+        
+        # 尝试使用输入的端口更新
+        try:
+            new_port = int(self.gsi_port_input.text().strip())
+            mgr.current_port = new_port
+        except ValueError:
+            self.parent_window.show_error("端口错误", "请输入有效的数字端口")
+            return
+            
+        success, msg = mgr.create_gsi_cfg()
+        if success:
+            self.parent_window.show_success("GSI配置已重新生成", f"{msg}\n请【重启游戏】以使配置生效。")
+        else:
+            self.parent_window.show_error("生成失败", msg)
 
     def _on_reset_all(self):
         dialog = MessageBoxBase(self.parent_window)

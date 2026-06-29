@@ -469,8 +469,17 @@ class CS2Tool(FluentWindow):
              if hasattr(self, 'home_tab'):
                  self.home_tab.status_gsi_server.setText(f"错误: {game_state.get('message', '无法启动服务器')}")
                  self.home_tab.status_gsi_server.setStyleSheet("color: red;")
-             self.show_error("GSI服务启动失败", game_state.get('message', '无法启动服务器'))
+             self.show_error("GSI服务启动失败", f"{game_state.get('message', '无法启动服务器')}\n请在设置页检查端口是否被占用，或尝试更改端口。")
              return
+             
+        # 处理端口自动更换警告
+        if "warning" in game_state and game_state["warning"] == "port_changed":
+            old_port = game_state.get("old_port")
+            new_port = game_state.get("new_port")
+            self.show_warning("GSI端口被占用", f"原端口 {old_port} 被占用，已自动切换至 {new_port}。\n请前往【设置-高级】点击「重新生成GSI配置」并重启游戏，否则音效将失效！", duration=10000)
+            if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_port_input'):
+                self.setting_tab.gsi_port_input.setText(str(new_port))
+            return
         
         # 处理服务器启动成功
         if "success" in game_state and game_state["success"] == "server_started":

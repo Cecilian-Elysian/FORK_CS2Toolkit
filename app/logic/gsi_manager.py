@@ -164,12 +164,18 @@ class GSIManager:
             print(f"端口 {port} 已被占用，正在寻找其他可用端口...")
             available_port = self._find_available_port(host, port)
             if available_port is None:
-                error_msg = f"无法找到可用端口（尝试范围：{port}-{port+9}）"
+                error_msg = f"无法找到可用端口（尝试范围：{port}-{port+9}），请检查是否有其他程序（如其他辅助软件）占用了大量端口。"
                 print(error_msg)
                 if self.data_callback:
                     error_info = {"error": "server_start_failed", "message": error_msg}
                     self.data_callback(json.dumps(error_info).encode('utf-8'))
                 return
+            
+            # 如果自动更换了端口，通知UI提示用户需要重新生成CFG
+            if self.data_callback:
+                warning_info = {"warning": "port_changed", "old_port": port, "new_port": available_port}
+                self.data_callback(json.dumps(warning_info).encode('utf-8'))
+                
             port = available_port
             print(f"找到可用端口：{port}")
         
