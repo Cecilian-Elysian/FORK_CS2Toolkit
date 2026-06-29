@@ -332,10 +332,15 @@ class SettingPage(ScrollArea):
         self.gsi_port_input = LineEdit(self.gsiControlCard)
         self.gsi_port_input.setPlaceholderText("端口(默认3000)")
         self.gsi_port_input.setFixedWidth(100)
-        if hasattr(self.parent_window, 'gsi_manager'):
-            self.gsi_port_input.setText(str(self.parent_window.gsi_manager.current_port))
-            
         self.gsi_toggle_btn = PushButton("启动服务", self.gsiControlCard)
+        
+        if hasattr(self.parent_window, 'gsi_manager'):
+            mgr = self.parent_window.gsi_manager
+            self.gsi_port_input.setText(str(mgr.current_port))
+            if mgr.is_running():
+                self.gsi_toggle_btn.setText("停止服务")
+                self.gsi_port_input.setEnabled(False)
+            
         self.gsi_regen_btn = PushButton("重新生成GSI配置", self.gsiControlCard)
         
         self.gsiControlCard.hBoxLayout.addWidget(self.gsi_port_input, 0, Qt.AlignmentFlag.AlignRight)
@@ -348,6 +353,18 @@ class SettingPage(ScrollArea):
         self.gsi_toggle_btn.clicked.connect(self._on_gsi_toggle)
         self.gsi_regen_btn.clicked.connect(self._on_gsi_regen)
         self.dangerGroup.addSettingCard(self.gsiControlCard)
+        
+        self.troubleshootCard = SettingCard(
+            FIF.HELP,
+            "自动疑难解答",
+            "自动检查游戏路径、GSI端口、CFG文件等常见环境问题并提供修复建议",
+            self.dangerGroup
+        )
+        self.troubleshoot_btn = PrimaryPushButton("开始检测", self.troubleshootCard)
+        self.troubleshoot_btn.clicked.connect(self._on_troubleshoot)
+        self.troubleshootCard.hBoxLayout.addWidget(self.troubleshoot_btn, 0, Qt.AlignmentFlag.AlignRight)
+        self.troubleshootCard.hBoxLayout.addSpacing(16)
+        self.dangerGroup.addSettingCard(self.troubleshootCard)
         
         self.resetCard = SettingCard(
             FIF.DELETE,
@@ -413,6 +430,64 @@ class SettingPage(ScrollArea):
             self.parent_window.show_success("GSI配置已重新生成", f"{msg}\n请【重启游戏】以使配置生效。")
         else:
             self.parent_window.show_error("生成失败", msg)
+
+    def _on_troubleshoot(self):
+        results = []
+        all_passed = True
+        
+        # 1. 检查游戏路径
+        steam_path = getattr(self.parent_window, 'steam_path', None)
+        if not steam_path or not os.path.exists(steam_path):
+            results.append("❌ 游戏路径: 未检测到有效路径。建议在主页手动指定。")
+            all_passed = False
+        else:
+            exe_path = os.path.join(steam_path, "game", "bin", "win64", "cs2.exe")
+            if not os.path.exists(exe_path):
+                results.append(f"❌ 游戏路径: 找到文件夹，但不存在 cs2.exe ({exe_path})。路径可能已失效。")
+                all_passed = False
+            else:
+                results.append("✅ 游戏路径: 正常。")
+                
+        # 2. 检查GSI服务与端口
+        mgr = getattr(self.parent_window, 'gsi_manager', None)
+        if mgr:
+            if not mgr.is_running():
+                results.append("❌ GSI服务: 未运行。如果无法启动，可能是端口被杀毒软件拦截。")
+                all_passed = False
+            else:
+                import socket
+                # 检查端口连通性 (仅做简单测试，可能被占用)
+                try:
+                    # 尝试连一下
+                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    s.settimeout(0.5)
+                    res = s.connect_ex(('127.0.0.1', mgr.current_port))
+                    s.close()
+                    if res == 0:
+                        results.append(f"✅ GSI服务: 运行中 (端口 {mgr.current_port})。")
+                    else:
+                        results.append(f"⚠️ GSI服务: 端口 {mgr.current_port} 连接异常，可能被拦截。")
+                except Exception as e:
+                    results.append(f"⚠️ GSI服务: 测试异常 ({e})。")
+        else:
+            results.append("❌ GSI服务: 未初始化。")
+            all_passed = False
+            
+        # 3. 检查 CFG 文件
+        if steam_path and os.path.exists(steam_path):
+            cfg_path = os.path.join(steam_path, "game", "csgo", "cfg", "gamestate_integration_cs2toolkit.cfg")
+            if os.path.exists(cfg_path):
+                results.append("✅ GSI配置: 存在于 CFG 目录。")
+            else:
+                results.append("❌ GSI配置: 缺失。请在“高级与危险操作”点击“重新生成GSI配置”。")
+                all_passed = False
+                
+        # 总结
+        summary = "\n\n".join(results)
+        if all_passed:
+            self.parent_window.show_success("检测通过", f"未发现明显异常，如果仍无声音，请尝试验证游戏完整性。\n\n检测报告:\n{summary}")
+        else:
+            self.parent_window.show_error("检测到异常", f"检测报告:\n{summary}")
 
     def _on_reset_all(self):
         dialog = MessageBoxBase(self.parent_window)

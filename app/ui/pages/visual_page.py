@@ -63,7 +63,7 @@ class VisualConfigDialog(MessageBoxBase):
             self.viewLayout.addLayout(selection_layout)
 
         elif self.dialog_type == 'boss_key':
-            self.titleLabel = SubtitleLabel('网页地址', self)
+            self.titleLabel = SubtitleLabel('一键切屏高级设置', self)
             self.viewLayout.addWidget(self.titleLabel)
             
             url_layout = QHBoxLayout()
@@ -73,6 +73,28 @@ class VisualConfigDialog(MessageBoxBase):
             self.url_input.textChanged.connect(self._on_url_changed)
             url_layout.addWidget(self.url_input, 1)
             self.viewLayout.addLayout(url_layout)
+            
+            delay_layout = QHBoxLayout()
+            delay_layout.addWidget(BodyLabel("延迟打开(秒):"))
+            from qfluentwidgets import SpinBox, ComboBox
+            self.delay_spin = SpinBox(self)
+            self.delay_spin.setRange(0, 60)
+            self.delay_spin.setValue(self.visual_config.get('boss_key_delay', 0))
+            self.delay_spin.valueChanged.connect(self._on_delay_changed)
+            delay_layout.addWidget(self.delay_spin, 1)
+            self.viewLayout.addLayout(delay_layout)
+            
+            action_layout = QHBoxLayout()
+            action_layout.addWidget(BodyLabel("新回合动作:"))
+            self.action_combo = ComboBox(self)
+            self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)"])
+            
+            action_val = self.visual_config.get('boss_key_action', 'none')
+            idx = 0 if action_val == 'none' else 1
+            self.action_combo.setCurrentIndex(idx)
+            self.action_combo.currentIndexChanged.connect(self._on_action_changed)
+            action_layout.addWidget(self.action_combo, 1)
+            self.viewLayout.addLayout(action_layout)
 
         self.widget.setMinimumWidth(400)
 
@@ -92,6 +114,15 @@ class VisualConfigDialog(MessageBoxBase):
             
     def _on_url_changed(self, text):
         self.visual_config['boss_key_url'] = text
+        self.config_manager.set('visual', self.visual_config)
+
+    def _on_delay_changed(self, value):
+        self.visual_config['boss_key_delay'] = value
+        self.config_manager.set('visual', self.visual_config)
+
+    def _on_action_changed(self, index):
+        val = 'none' if index == 0 else 'close'
+        self.visual_config['boss_key_action'] = val
         self.config_manager.set('visual', self.visual_config)
 
 class KillIconDialog(MessageBoxBase):
@@ -261,6 +292,8 @@ class VisualPage(ScrollArea):
             'death_media_path': '',
             'boss_key_enabled': False,
             'boss_key_url': 'https://www.bilibili.com/',
+            'boss_key_delay': 0,
+            'boss_key_action': 'none',
             'kill_icon_enabled': False,
             'kill_icon_is_advanced': False,
             'kill_icon_width': 120,

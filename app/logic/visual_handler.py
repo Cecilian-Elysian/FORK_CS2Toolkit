@@ -14,6 +14,8 @@ class VisualSignals(QObject):
     minimize_game = Signal()
     restore_game = Signal()
     show_kill_icon = Signal(str)
+    open_boss_key_url = Signal(str, int)  # url, delay(ms)
+    close_browser = Signal()
 
 class OverlayWindow(QWidget):
     def __init__(self):
@@ -284,6 +286,8 @@ class VisualHandler(QObject):
         
         self.signals.minimize_game.connect(self._minimize_cs2)
         self.signals.restore_game.connect(self._restore_cs2)
+        self.signals.open_boss_key_url.connect(self._open_boss_key_url)
+        self.signals.close_browser.connect(self._close_browser)
         
         self.is_flashed = False
         self.is_dead = False
@@ -303,6 +307,8 @@ class VisualHandler(QObject):
         
         self.boss_key_enabled = config.get('boss_key_enabled', False)
         self.boss_key_url = config.get('boss_key_url', 'https://www.baidu.com')
+        self.boss_key_delay = config.get('boss_key_delay', 0)
+        self.boss_key_action = config.get('boss_key_action', 'none')
         
         self.kill_icon_enabled = config.get('kill_icon_enabled', False)
         self.kill_icon_is_advanced = config.get('kill_icon_is_advanced', False)
@@ -369,7 +375,7 @@ class VisualHandler(QObject):
                 
             if self.boss_key_enabled and not is_observing:
                 self.signals.minimize_game.emit()
-                webbrowser.open(self.boss_key_url)
+                self.signals.open_boss_key_url.emit(self.boss_key_url, self.boss_key_delay * 1000)
                 
         elif health > 0 and self.is_dead:
             self.is_dead = False
@@ -381,6 +387,8 @@ class VisualHandler(QObject):
             self.is_dead = False
             if self.boss_key_enabled:
                 self.signals.restore_game.emit()
+                if self.boss_key_action == 'close':
+                    self.signals.close_browser.emit()
             if self.death_media_enabled:
                 self.signals.hide_death.emit()
                 
@@ -391,6 +399,8 @@ class VisualHandler(QObject):
         if health > 0 and phase == 'freezetime' and getattr(self, '_last_phase', '') != 'freezetime':
             if self.boss_key_enabled:
                 self.signals.restore_game.emit()
+                if self.boss_key_action == 'close':
+                    self.signals.close_browser.emit()
                 
         # 4. 击杀图标处理
         if self.kill_icon_enabled and not is_observing:
@@ -433,3 +443,16 @@ class VisualHandler(QObject):
         if hwnd:
             user32.ShowWindow(hwnd, 9) # SW_RESTORE
             user32.SetForegroundWindow(hwnd)
+
+    def _open_boss_key_url(self, url, delay_ms):
+        if delay_ms > 0:
+            QTimer.singleShot(delay_ms, lambda: webbrowser.open(url))
+        else:
+            webbrowser.open(url)
+            
+    def _close_browser(self):
+        import subprocess
+        # 强制关闭常见的浏览器进程
+        browsers = ["msedge.exe", "chrome.exe", "firefox.exe", "360se.exe", "iexplore.exe", "sogouexplorer.exe"]
+        for b in browsers:
+            subprocess.run(["taskkill", "/F", "/IM", b], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)

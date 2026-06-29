@@ -225,6 +225,9 @@ class EventConfigWidget(QWidget):
         self.edit_btn = ToolButton(FluentIcon.EDIT)
         self.edit_btn.clicked.connect(self._handle_edit)
 
+        self.test_btn = ToolButton(FluentIcon.PLAY)
+        self.test_btn.clicked.connect(self._handle_test)
+
         self.when_label = BodyLabel("当")
         layout.addWidget(self.when_label)
         layout.addWidget(self.weapon_name_input, 1)
@@ -234,6 +237,7 @@ class EventConfigWidget(QWidget):
         layout.addWidget(BodyLabel("音量:"))
         layout.addWidget(self.volume_slider)
         layout.addWidget(self.volume_label)
+        layout.addWidget(self.test_btn)
         layout.addWidget(self.edit_btn)
         layout.addWidget(self.delete_btn)
 
@@ -264,6 +268,24 @@ class EventConfigWidget(QWidget):
     def _handle_edit(self):
         if self.on_edit:
             self.on_edit(self)
+
+    def _handle_test(self):
+        if self.is_advanced:
+            # 播放连杀1的音效
+            if self.sounds_1_5 and len(self.sounds_1_5) > 0:
+                s = self.sounds_1_5[0]
+                if s and s.get("path"):
+                    self._play_test_sound(s.get("path"), s.get("volume", 50))
+        else:
+            if self.sound_path:
+                self._play_test_sound(self.sound_path, self.volume_slider.value())
+
+    def _play_test_sound(self, path, volume):
+        if not path or not os.path.exists(path): return
+        if not hasattr(self, '_test_player'):
+            from app.logic.sound_player import SoundPlayer
+            self._test_player = SoundPlayer()
+        self._test_player.play_sound(path, volume)
     
     def _on_event_type_changed(self, index):
         # 当事件类型改变时调用
