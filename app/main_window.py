@@ -155,6 +155,12 @@ class CS2Tool(FluentWindow):
             self.gsi_manager.set_cs2_path(self.steam_path)
             self.gsi_manager.create_gsi_cfg()
         self.gsi_manager.start_server()
+        
+        # 更新设置页的按钮状态
+        if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_toggle_btn'):
+            if self.gsi_manager.is_running():
+                self.setting_tab.gsi_toggle_btn.setText("停止服务")
+                self.setting_tab.gsi_port_input.setEnabled(False)
 
     def init_window(self):
         self.setWindowTitle("CS2 工具箱")
@@ -488,6 +494,12 @@ class CS2Tool(FluentWindow):
             if hasattr(self, 'home_tab'):
                 self.home_tab.status_gsi_server.setText(f"服务运行中...")
                 self.home_tab.status_gsi_server.setStyleSheet("color: green;")
+            
+            # 更新设置页的UI状态
+            if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_toggle_btn'):
+                self.setting_tab.gsi_toggle_btn.setText("停止服务")
+                self.setting_tab.gsi_port_input.setEnabled(False)
+                
             self.show_success("GSI服务启动成功", f"服务已在 {host}:{port} 端口上开启")
             return
         
