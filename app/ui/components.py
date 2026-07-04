@@ -159,6 +159,9 @@ class EventConfigWidget(QWidget):
             "骷髅匕首", "廓尔喀刀"
         ]
         
+        grenade_names_cn = [
+            "所有道具", "闪光弹", "烟雾弹", "高爆手雷", "燃烧弹/燃烧瓶", "诱饵弹"
+        ]
 
         weapon_names_en = [
             "all_weapons",
@@ -177,13 +180,22 @@ class EventConfigWidget(QWidget):
             "weapon_knife_skeleton", "weapon_knife_kukri"
         ]
         
+        grenade_names_en = [
+            "all_grenades", "weapon_flashbang", "weapon_smokegrenade", "weapon_hegrenade", "weapon_molotov", "weapon_decoy"
+        ]
+        
         # 创建中英文映射字典
         self.weapon_cn_to_en = dict(zip(weapon_names_cn, weapon_names_en))
         self.weapon_en_to_cn = dict(zip(weapon_names_en, weapon_names_cn))
-        self.weapon_name_input.addItems(weapon_names_cn)
+        self.weapon_cn_to_en.update(dict(zip(grenade_names_cn, grenade_names_en)))
+        self.weapon_en_to_cn.update(dict(zip(grenade_names_en, grenade_names_cn)))
+        
+        # 组合所有的中文名称供下拉框使用
+        all_cn_names = weapon_names_cn + grenade_names_cn
+        self.weapon_name_input.addItems(all_cn_names)
         
         # 添加搜索/自动补全功能
-        completer = QCompleter(weapon_names_cn, self)
+        completer = QCompleter(all_cn_names, self)
         completer.setFilterMode(Qt.MatchContains)
         completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.weapon_name_input.setCompleter(completer)
@@ -198,7 +210,8 @@ class EventConfigWidget(QWidget):
             "--- 其他音效 ---",
             "切换到",
             "换弹", 
-            "使用武器击杀"
+            "使用武器击杀",
+            "道具投出"
         ]
         self.event_type_combo.addItems(event_items)
         self.event_type_combo.setCurrentIndex(1)  # 默认选择"全局击杀"
@@ -319,6 +332,12 @@ class EventConfigWidget(QWidget):
             self.weapon_name_input.setEnabled(True)
             if self.weapon_name_input.currentText() == "全局事件":
                 self.weapon_name_input.setCurrentText("")
+        elif index == 9:  # 道具投出
+            self.when_label.show()
+            self.weapon_name_input.show()
+            self.weapon_name_input.setEnabled(True)
+            if self.weapon_name_input.currentText() == "全局事件":
+                self.weapon_name_input.setCurrentText("所有道具")
         else:
             # 对于武器事件，启用武器名称输入
             self.when_label.show()
@@ -361,6 +380,12 @@ class EventConfigWidget(QWidget):
             self.weapon_name_input.setEnabled(True)
             if self.weapon_name_input.currentText() == "全局事件":
                 self.weapon_name_input.setCurrentText("")
+        elif index == 9:  # 道具投出
+            self.when_label.show()
+            self.weapon_name_input.show()
+            self.weapon_name_input.setEnabled(True)
+            if self.weapon_name_input.currentText() == "全局事件":
+                self.weapon_name_input.setCurrentText("所有道具")
         else:
             # 对于武器事件，显示武器名称输入
             self.when_label.show()
@@ -384,7 +409,8 @@ class EventConfigWidget(QWidget):
             4: "player_death",   # 玩家死亡
             6: "active",         # 切换到
             7: "reloading",      # 换弹
-            8: "weapon_kill"     # 使用武器击杀
+            8: "weapon_kill",    # 使用武器击杀
+            9: "grenade_thrown"  # 道具投出
         }
         
         # 强制为全局事件设置武器名称，防止意外覆盖
@@ -431,7 +457,8 @@ class EventConfigWidget(QWidget):
                 "player_death": 4,   # 玩家死亡
                 "active": 6,         # 切换到
                 "reloading": 7,      # 换弹
-                "weapon_kill": 8     # 使用武器击杀
+                "weapon_kill": 8,    # 使用武器击杀
+                "grenade_thrown": 9  # 道具投出
             }
             event_index = event_index_mapping.get(event_type, 1)  # 默认选择"全局击杀"
             # 阻止信号触发，避免在设置配置时触发_on_event_type_changed

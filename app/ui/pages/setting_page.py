@@ -8,6 +8,17 @@ import winreg
 import sys
 import os
 
+IMPORT_OPTION_LABELS = {
+    "bg": "自定义软件背景",
+    "theme": "应用主题",
+    "video": "开屏动画",
+    "sound": "启动音效",
+    "font": "全局字体",
+    "visual": "游戏内视觉效果 (闪白/击杀/死亡)",
+    "gsi": "游戏内实时音效配置",
+    "go_pet": "GO桌宠配置与资源",
+}
+
 class BackgroundSettingDialog(MessageBoxBase):
     """ 自定义背景设置对话框 """
     def __init__(self, config_manager, parent_window, parent=None):
@@ -173,28 +184,41 @@ class ExportConfigDialog(MessageBoxBase):
         return self.name_input.text().strip(), self.desc_input.text().strip(), selections
 
 class ImportConfirmDialog(MessageBoxBase):
-    def __init__(self, meta, parent=None):
+    def __init__(self, meta, available_sections=None, parent=None):
         super().__init__(parent)
         self.titleLabel = SubtitleLabel('确认导入配置', self)
         self.viewLayout.addWidget(self.titleLabel)
+        self.checkboxes = {}
         
         name = meta.get("name", "未知")
         desc = meta.get("description", "无描述信息")
-        included_resources = meta.get("included_resources", [])
+        available_sections = available_sections or {}
         
         self.viewLayout.addWidget(BodyLabel(f"配置名称: {name}"))
         self.viewLayout.addWidget(BodyLabel(f"配置描述: {desc}"))
-        
-        if included_resources:
-            self.viewLayout.addWidget(BodyLabel("包含以下资源:"))
-            for res in included_resources:
-                self.viewLayout.addWidget(BodyLabel(f" • {res}"))
+
+        self.viewLayout.addWidget(BodyLabel("请选择要导入的配置项:"))
+        for key, label in IMPORT_OPTION_LABELS.items():
+            cb = CheckBox(label, self)
+            is_available = bool(available_sections.get(key))
+            cb.setChecked(is_available)
+            cb.setEnabled(is_available)
+            cb.stateChanged.connect(self._validate)
+            self.viewLayout.addWidget(cb)
+            self.checkboxes[key] = cb
         
         warning = BodyLabel("导入将覆盖当前对应的设置，是否继续？")
         warning.setStyleSheet("color: #d40000; margin-top: 10px;")
         self.viewLayout.addWidget(warning)
         
         self.widget.setMinimumWidth(350)
+        self._validate()
+
+    def _validate(self):
+        self.yesButton.setDisabled(not any(cb.isChecked() for cb in self.checkboxes.values()))
+
+    def get_selections(self):
+        return {key: cb.isChecked() for key, cb in self.checkboxes.items()}
 
 class QuickSwitchConfigCard(SettingCard):
     def __init__(self, icon, title, content=None, parent=None):
@@ -658,8 +682,10 @@ class SettingPage(ScrollArea):
                 return
                 
             meta = self.config_manager.get_zip_meta(path)
-            dialog = ImportConfirmDialog(meta, self)
+            available_sections = self.config_manager.get_importable_sections(path)
+            dialog = ImportConfirmDialog(meta, available_sections, self)
             if dialog.exec():
+                selections = dialog.get_selections()
                 import shutil
                 dest_path = os.path.join(self.config_manager.configs_dir, os.path.basename(path))
                 if os.path.abspath(path) != os.path.abspath(dest_path):
@@ -673,7 +699,7 @@ class SettingPage(ScrollArea):
                         print(f"复制配置文件失败: {e}")
                         dest_path = path
 
-                self._apply_config_zip(dest_path)
+                self._apply_config_zip(dest_path, selections)
                 self._load_quick_switch_configs()
 
     def _on_quick_switch(self):
@@ -682,20 +708,25 @@ class SettingPage(ScrollArea):
             zip_path = self.quickSwitchCard.comboBox.itemData(idx)
             if zip_path and os.path.exists(zip_path):
                 meta = self.config_manager.get_zip_meta(zip_path)
-                dialog = ImportConfirmDialog(meta, self)
+                available_sections = self.config_manager.get_importable_sections(zip_path)
+                dialog = ImportConfirmDialog(meta, available_sections, self)
                 if dialog.exec():
-                    self._apply_config_zip(zip_path)
+                    self._apply_config_zip(zip_path, dialog.get_selections())
             else:
                 self.parent_window.show_error("错误", "配置文件不存在。")
                 self._load_quick_switch_configs()
 
-    def _apply_config_zip(self, zip_path):
-        success, msg = self.config_manager.import_config(zip_path)
+    def _apply_config_zip(self, zip_path, selections=None):
+        success, msg = self.config_manager.import_config(zip_path, selections)
         if success:
             self.parent_window.show_success("导入成功", "配置导入成功，界面即将刷新。")
+            selections = selections or {}
             
             # Apply imported current selections to game files
-            current_video = self.config_manager.get("current_video")
+            if selections.get("video", True):
+                current_video = self.config_manager.get("current_video")
+            else:
+                current_video = ""
             if current_video:
                 video_path = self.config_manager.get("current_video_path")
                 if video_path and os.path.exists(video_path):
@@ -706,7 +737,7 @@ class SettingPage(ScrollArea):
                         replacer = VideoReplacer(steam_lib)
                         replacer.replace_video(video_path)
                         
-            current_sound = self.config_manager.get("current_sound")
+            current_sound = self.config_manager.get("current_sound") if selections.get("sound", True) else ""
             if current_sound:
                 sound_path = self.config_manager.get("current_sound_path")
                 if sound_path and os.path.exists(sound_path):
@@ -714,7 +745,7 @@ class SettingPage(ScrollArea):
                     replacer = SoundReplacer(self.parent_window.steam_path)
                     replacer.replace_sound(sound_path)
                         
-            current_font = self.config_manager.get("current_font")
+            current_font = self.config_manager.get("current_font") if selections.get("font", True) else ""
             if current_font:
                 font_path = self.config_manager.get("current_font_path")
                 if font_path and os.path.exists(font_path):
@@ -725,26 +756,29 @@ class SettingPage(ScrollArea):
                         replacer = FontReplacer(steam_lib)
                         replacer.replace_font(font_path, lambda msg: None)
             
-            self.parent_window.load_all_presets()
+            if selections.get("video", True) or selections.get("sound", True) or selections.get("font", True):
+                self.parent_window.load_all_presets()
             self.parent_window.update_home_status()
-            self.parent_window.apply_custom_background()
-            if hasattr(self.parent_window, 'integrated_sound_page'):
+            if selections.get("bg", True):
+                self.parent_window.apply_custom_background()
+            if selections.get("gsi", True) and hasattr(self.parent_window, 'integrated_sound_page'):
                 self.parent_window.integrated_sound_page.load_events()
-            if hasattr(self.parent_window, 'visual_tab'):
+            if selections.get("visual", True) and hasattr(self.parent_window, 'visual_tab'):
                 self.parent_window.visual_tab.config_manager = self.config_manager
                 self.parent_window.visual_tab._update_ui_from_config()
-            if hasattr(self.parent_window, 'go_pet_tab'):
+            if selections.get("go_pet", True) and hasattr(self.parent_window, 'go_pet_tab'):
                 self.parent_window.go_pet_tab.reload_from_config()
-            if hasattr(self.parent_window, 'go_pet_manager'):
+            if selections.get("go_pet", True) and hasattr(self.parent_window, 'go_pet_manager'):
                 self.parent_window.go_pet_manager._update_config()
             
             # 刷新主题 (根据导入的配置)
-            theme_val = self.config_manager.get("theme", "Auto")
-            idx_map = {"Light": 0, "Dark": 1, "Auto": 2}
-            self.themeCard.comboBox.blockSignals(True)
-            self.themeCard.comboBox.setCurrentIndex(idx_map.get(theme_val, 2))
-            self.themeCard.comboBox.blockSignals(False)
-            self._on_theme_changed(idx_map.get(theme_val, 2))
+            if selections.get("theme", True):
+                theme_val = self.config_manager.get("theme", "Auto")
+                idx_map = {"Light": 0, "Dark": 1, "Auto": 2}
+                self.themeCard.comboBox.blockSignals(True)
+                self.themeCard.comboBox.setCurrentIndex(idx_map.get(theme_val, 2))
+                self.themeCard.comboBox.blockSignals(False)
+                self._on_theme_changed(idx_map.get(theme_val, 2))
             
         else:
             self.parent_window.show_error("导入失败", msg)

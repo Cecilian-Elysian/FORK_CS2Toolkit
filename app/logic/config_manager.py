@@ -5,6 +5,17 @@ import sys
 import zipfile
 import uuid
 
+IMPORT_SELECTION_DEFAULTS = {
+    "bg": True,
+    "theme": True,
+    "video": True,
+    "sound": True,
+    "font": True,
+    "visual": True,
+    "gsi": True,
+    "go_pet": True,
+}
+
 class ConfigManager:
     # 统一的配置管理器。
     # - 管理CS2Toolkit工作目录。
@@ -295,6 +306,36 @@ class ConfigManager:
             pass
         return {"name": os.path.basename(zip_path), "description": "无描述信息"}
 
+    def get_importable_sections(self, zip_path):
+        sections = {key: False for key in IMPORT_SELECTION_DEFAULTS}
+
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zipf:
+                if "config.json" not in zipf.namelist():
+                    return sections
+                config_bytes = zipf.read("config.json")
+                imported_config = json.loads(config_bytes.decode('utf-8'))
+        except Exception:
+            return sections
+
+        sections["bg"] = any(
+            key in imported_config for key in ["bg_path", "bg_scale", "bg_bright", "bg_blur"]
+        )
+        sections["theme"] = "theme" in imported_config
+        sections["video"] = any(
+            key in imported_config for key in ["video_presets", "current_video", "current_video_path"]
+        )
+        sections["sound"] = any(
+            key in imported_config for key in ["sound_presets", "current_sound", "current_sound_path"]
+        )
+        sections["font"] = any(
+            key in imported_config for key in ["font_presets", "current_font", "current_font_path"]
+        )
+        sections["visual"] = "visual" in imported_config
+        sections["gsi"] = "gsi_events" in imported_config
+        sections["go_pet"] = "go_pet" in imported_config
+        return sections
+
     def export_config(self, export_zip_path, name, description="", selections=None):
         import copy
         if selections is None:
@@ -472,9 +513,12 @@ class ConfigManager:
         except Exception as e:
             return False, f"导出失败: {str(e)}"
 
-    def import_config(self, import_zip_path):
+    def import_config(self, import_zip_path, selections=None):
         extract_dir = os.path.join(self.work_dir, "imported", uuid.uuid4().hex[:8])
         os.makedirs(extract_dir, exist_ok=True)
+        selected = dict(IMPORT_SELECTION_DEFAULTS)
+        if selections:
+            selected.update({key: bool(value) for key, value in selections.items()})
         
         try:
             with zipfile.ZipFile(import_zip_path, 'r') as zipf:
@@ -566,10 +610,26 @@ class ConfigManager:
             local_keys_to_protect = ['auto_start', 'close_behavior', 'hide_close_prompt', 'steam_path', 'gsi_port', 'gsi_sound_presets']
             for key in local_keys_to_protect:
                 imported_config.pop(key, None)
-                
-            # Update config
-            for key in imported_config:
-                self.config[key] = imported_config[key]
+
+            keys_by_selection = {
+                "bg": ["bg_path", "bg_scale", "bg_bright", "bg_blur"],
+                "theme": ["theme"],
+                "video": ["video_presets", "current_video", "current_video_path"],
+                "sound": ["sound_presets", "current_sound", "current_sound_path"],
+                "font": ["font_presets", "current_font", "current_font_path"],
+                "visual": ["visual"],
+                "gsi": ["gsi_events"],
+                "go_pet": ["go_pet"],
+            }
+
+            keys_to_apply = []
+            for section, keys in keys_by_selection.items():
+                if selected.get(section):
+                    keys_to_apply.extend(keys)
+
+            for key in keys_to_apply:
+                if key in imported_config:
+                    self.config[key] = imported_config[key]
                 
             self.save_config()
             return True, "导入成功"

@@ -3,10 +3,15 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import zipfile
 
+
+def remove_readonly(func, path, excinfo):
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 def get_version():
     main_window_path = os.path.join(os.path.dirname(__file__), 'app', 'main_window.py')
@@ -153,7 +158,11 @@ def build_exe():
         runtime_exe_name = f"{output_filename}_runtime.exe"
 
         if os.path.exists(package_root):
-            shutil.rmtree(package_root)
+            try:
+                shutil.rmtree(package_root, onerror=remove_readonly)
+            except PermissionError as e:
+                print(f"无法删除旧的构建目录，可能是程序正在运行。请关闭程序后再试。\n错误信息: {e}")
+                sys.exit(1)
 
         os.makedirs(package_root, exist_ok=True)
         shutil.move(build_output_dir, runtime_dir)
