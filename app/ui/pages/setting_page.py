@@ -220,6 +220,16 @@ class ExportImportCard(SettingCard):
         self.hBoxLayout.addWidget(self.export_btn, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
 
+class DataStorageCard(SettingCard):
+    def __init__(self, icon, title, content=None, parent=None):
+        super().__init__(icon, title, content, parent)
+        self.open_btn = PushButton("打开目录", self)
+        self.migrate_btn = PushButton("迁移目录", self)
+        self.hBoxLayout.addWidget(self.open_btn, 0, Qt.AlignmentFlag.AlignRight)
+        self.hBoxLayout.addSpacing(8)
+        self.hBoxLayout.addWidget(self.migrate_btn, 0, Qt.AlignmentFlag.AlignRight)
+        self.hBoxLayout.addSpacing(16)
+
 class SettingPage(ScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -380,12 +390,53 @@ class SettingPage(ScrollArea):
         self.reset_btn.clicked.connect(self._on_reset_all)
         self.dangerGroup.addSettingCard(self.resetCard)
 
+        # 5. 数据存储组
+        self.storageGroup = SettingCardGroup("数据存储", self.view)
+        
+        self.dataStorageCard = DataStorageCard(
+            icon=FIF.FOLDER,
+            title="数据保存目录",
+            content=self.config_manager.work_dir,
+            parent=self.storageGroup
+        )
+        self.dataStorageCard.open_btn.clicked.connect(self._on_open_data_dir)
+        self.dataStorageCard.migrate_btn.clicked.connect(self._on_migrate_data_dir)
+        self.storageGroup.addSettingCard(self.dataStorageCard)
+
         self.expandLayout.addWidget(self.personalGroup)
         self.expandLayout.addWidget(self.systemGroup)
         self.expandLayout.addWidget(self.configGroup)
+        self.expandLayout.addWidget(self.storageGroup)
         self.expandLayout.addWidget(self.dangerGroup)
         
         self._load_quick_switch_configs()
+
+    def _on_open_data_dir(self):
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.config_manager.work_dir))
+
+    def _on_migrate_data_dir(self):
+        from qfluentwidgets import MessageBox
+        new_dir = QFileDialog.getExistingDirectory(self, "选择新的数据保存目录", self.config_manager.work_dir)
+        if not new_dir:
+            return
+            
+        success, msg = self.config_manager.change_work_dir(new_dir)
+        if success:
+            self.dataStorageCard.setContent(new_dir)
+            dialog = MessageBox(
+                "迁移成功",
+                msg,
+                self.parent_window
+            )
+            dialog.yesButton.setText("立即退出")
+            dialog.cancelButton.hide()
+            if dialog.exec():
+                import sys
+                sys.exit(0)
+        else:
+            self.parent_window.show_error("迁移失败", msg)
 
     def _show_bg_dialog(self):
         dialog = BackgroundSettingDialog(self.config_manager, self.parent_window, self)

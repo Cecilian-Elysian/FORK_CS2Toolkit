@@ -41,10 +41,66 @@ class ConfigManager:
         self.load_config()
 
     def _resolve_work_dir(self, directory_name):
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        parent_dir = os.path.dirname(exe_dir)
+        
+        # Check for path override file (e.g. if user moved the data directory)
+        for d in [exe_dir, parent_dir]:
+            override_file = os.path.join(d, "cs2toolkit_data_path.txt")
+            if os.path.isfile(override_file):
+                try:
+                    with open(override_file, 'r', encoding='utf-8') as f:
+                        custom_path = f.read().strip()
+                        if custom_path and os.path.isabs(custom_path):
+                            # Try to ensure the custom directory exists
+                            os.makedirs(custom_path, exist_ok=True)
+                            return custom_path
+                except Exception as e:
+                    print(f"无法读取或创建自定义数据路径: {e}")
+
+        # Default to LOCALAPPDATA
         local_appdata = os.environ.get("LOCALAPPDATA")
         if not local_appdata:
             local_appdata = os.path.join(os.path.expanduser("~"), "AppData", "Local")
         return os.path.join(local_appdata, directory_name)
+
+    def change_work_dir(self, new_dir):
+        """将当前数据迁移到新目录，并写入重定向文件"""
+        if not new_dir or not os.path.isabs(new_dir):
+            return False, "新路径必须是有效的绝对路径。"
+            
+        if os.path.abspath(new_dir) == os.path.abspath(self.work_dir):
+            return False, "新路径与当前路径相同。"
+
+        # 1. 尝试复制所有文件到新目录
+        try:
+            os.makedirs(new_dir, exist_ok=True)
+            for item in os.listdir(self.work_dir):
+                src_path = os.path.join(self.work_dir, item)
+                dst_path = os.path.join(new_dir, item)
+                if os.path.isdir(src_path):
+                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(src_path, dst_path)
+        except OSError as e:
+            return False, f"复制数据到新目录失败，可能是空间不足或权限受限: {e}"
+
+        # 2. 写入重定向文件
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        if os.path.basename(exe_dir).lower() == "runtime":
+            write_dir = os.path.dirname(exe_dir)
+        else:
+            write_dir = exe_dir
+            
+        override_file = os.path.join(write_dir, "cs2toolkit_data_path.txt")
+        try:
+            with open(override_file, 'w', encoding='utf-8') as f:
+                f.write(os.path.abspath(new_dir))
+        except OSError as e:
+            return False, f"无法写入路径配置文件: {e}"
+
+        # 3. 迁移成功（不自动删除旧目录，以防万一，用户可手动删除）
+        return True, "数据目录迁移成功！为了确保所有组件正常工作，请重新启动本软件。"
 
     def _candidate_legacy_work_dirs(self):
         seen = set()
