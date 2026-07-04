@@ -230,8 +230,12 @@ class GoPetOverlay(_BasePetWindow):
 class GoPetCaptureWindow(_BasePetWindow):
     def __init__(self):
         super().__init__()
+        # 主播输出窗口需要允许 OBS 采集，同时背景保持透明且不强制置顶。
         self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet("background-color: transparent;")
+        self.pet_label.setStyleSheet("background-color: transparent;")
+        self.pet_video_widget.setStyleSheet("background-color: transparent;")
         self.setWindowTitle("GO桌宠主播输出")
 
         self._drag_pos = None

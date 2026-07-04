@@ -560,7 +560,9 @@ class IntegratedSoundPage(QWidget):
         if not hasattr(self, 'previous_deaths'):
             self.previous_deaths = player.get('match_stats', {}).get('deaths', 0)
         if not hasattr(self, 'previous_bomb_state'):
-            self.previous_bomb_state = game_state.get('round', {}).get('bomb', '')
+            round_bomb_state = game_state.get('round', {}).get('bomb', '')
+            bomb_state = game_state.get('bomb', {}).get('state', '')
+            self.previous_bomb_state = round_bomb_state or bomb_state
             
         # 获取当前状态信息
         match_stats = player.get('match_stats', {})
@@ -862,7 +864,9 @@ class IntegratedSoundPage(QWidget):
         # 更新状态
         self.previous_kills = current_kills
         self.previous_deaths = current_deaths
-        self.previous_bomb_state = game_state.get('round', {}).get('bomb', '')
+        round_bomb_state = game_state.get('round', {}).get('bomb', '')
+        bomb_state = game_state.get('bomb', {}).get('state', '')
+        self.previous_bomb_state = round_bomb_state or bomb_state
         self.previous_observing_state = is_observing
         self.previous_observer_slot = observer_slot
         self.previous_round_phase = current_round_phase
@@ -928,7 +932,8 @@ class IntegratedSoundPage(QWidget):
         """处理C4相关事件"""
         # 检查C4事件（观战状态下跳过）
         round_data = game_state.get('round', {})
-        current_bomb_state = round_data.get('bomb', '')
+        bomb_data = game_state.get('bomb', {})
+        current_bomb_state = round_data.get('bomb', '') or bomb_data.get('state', '')
         
         if current_bomb_state != self.previous_bomb_state and not skip_non_death_events:
             if current_bomb_state == 'planted':
@@ -951,8 +956,8 @@ class IntegratedSoundPage(QWidget):
                         self.sound_player.play_sound(sound_path, volume, channel="bomb")
                         print(f"[GSI音效] 触发C4安装音效, 音量: {volume}%")
                         break
-            elif current_bomb_state == 'defused' or (self.previous_bomb_state == 'planted' and current_bomb_state == ''):
-                # 触发C4拆除音效（当状态为defused或从planted变为空时）
+            elif current_bomb_state == 'defused':
+                # 只在明确收到 defused 状态时触发C4拆除，避免爆炸时误触发
                 for i in range(self.event_list.count()):
                     item = self.event_list.item(i)
                     widget = self.event_list.itemWidget(item)

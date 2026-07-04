@@ -34,7 +34,7 @@ PET_EVENT_OPTIONS = [
     ("flashed", "被闪白"),
     ("kill", "击杀"),
     ("death", "被击杀"),
-    ("bomb", "炸弹倒计时"),
+    ("bomb", "炸弹安放"),
     ("rich", "经济高于指定值"),
     ("poor", "经济低于指定值"),
     ("win", "回合胜利"),
@@ -505,11 +505,6 @@ class PetEventDialog(MessageBoxBase):
             self.threshold_spin.setRange(1, 100)
             self.threshold_spin.setValue(30)
             self.threshold_container.show()
-        elif event_type == "bomb":
-            self.threshold_title.setText("剩余秒数低于等于")
-            self.threshold_spin.setRange(1, 60)
-            self.threshold_spin.setValue(10)
-            self.threshold_container.show()
         elif event_type == "rich":
             self.threshold_title.setText("经济高于")
             self.threshold_spin.setRange(0, 16000)
@@ -552,7 +547,7 @@ class PetEventDialog(MessageBoxBase):
             "image": self.image_path,
             "sound": self.sound_path
         }
-        if event_type in ["low_health", "bomb", "rich", "poor"]:
+        if event_type in ["low_health", "rich", "poor"]:
             config["threshold"] = self.threshold_spin.value()
         return config
 

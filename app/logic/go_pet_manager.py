@@ -22,7 +22,6 @@ class GoPetManager(QObject):
         self.is_dead = False
         self.health = 100
         self.bomb_planted = False
-        self.bomb_seconds_remaining = None
         self.phase = ""
         
         self.priority_map = {
@@ -108,29 +107,6 @@ class GoPetManager(QObject):
         except (TypeError, ValueError):
             return None
 
-    def _get_bomb_seconds_remaining(self, game_state):
-        bomb_data = game_state.get('bomb', {})
-        phase_countdowns = game_state.get('phase_countdowns', {})
-        candidates = [
-            bomb_data.get('countdown'),
-            bomb_data.get('countdown_sec'),
-            bomb_data.get('time_remaining'),
-            phase_countdowns.get('phase_ends_in'),
-        ]
-        for candidate in candidates:
-            parsed = self._parse_float(candidate)
-            if parsed is not None:
-                return parsed
-        return None
-
-    def _is_bomb_active(self):
-        if not self.bomb_planted or "bomb" not in self.events_config:
-            return False
-        threshold = self.events_config["bomb"].get("threshold", 10)
-        if self.bomb_seconds_remaining is None:
-            return True
-        return self.bomb_seconds_remaining <= threshold
-            
     def _get_random_file(self, path, is_sound=False):
         if not path or not os.path.exists(path):
             return None
@@ -184,8 +160,6 @@ class GoPetManager(QObject):
             self._trigger_event("death")
         elif self.is_flashed:
             self._trigger_event("flashed")
-        elif self._is_bomb_active():
-            self._trigger_event("bomb")
         elif self._is_low_health_active():
             self._trigger_event("low_health")
         elif self.phase == "freezetime":
@@ -222,7 +196,6 @@ class GoPetManager(QObject):
             self.phase = phase
             if phase in ("freezetime", "over"):
                 self.bomb_planted = False
-                self.bomb_seconds_remaining = None
             if previous_phase == "over" and hasattr(self, '_round_over_triggered'):
                 del self._round_over_triggered
             self._reset_to_persistent_state()
@@ -254,15 +227,12 @@ class GoPetManager(QObject):
         # Bomb
         bomb_data = game_state.get('bomb', {})
         bomb_state = round_info.get('bomb', '') or bomb_data.get('state', '')
-        was_bomb_active = self._is_bomb_active()
         if bomb_state == 'planted':
-            self.bomb_planted = True
-            self.bomb_seconds_remaining = self._get_bomb_seconds_remaining(game_state)
-            if self._is_bomb_active() and not was_bomb_active:
-                self._trigger_event("bomb")
-        elif self.bomb_planted or self.bomb_seconds_remaining is not None:
+            if not self.bomb_planted:
+                self.bomb_planted = True
+                self._trigger_event("bomb", transient=True)
+        elif self.bomb_planted:
             self.bomb_planted = False
-            self.bomb_seconds_remaining = None
             self._reset_to_persistent_state()
             
         # Kills
