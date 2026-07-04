@@ -5,10 +5,10 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 
 
 def get_version():
-    """从 main_window.py 中动态提取版本号"""
     main_window_path = os.path.join(os.path.dirname(__file__), 'app', 'main_window.py')
     try:
         with open(main_window_path, 'r', encoding='utf-8') as f:
@@ -81,6 +81,21 @@ def inject_release_endpoints(project_root, update_url, announcement_url):
 
     return file_path, original_content
 
+
+def create_release_zip(package_root, output_filename):
+    archive_path = os.path.join(os.path.dirname(package_root), f"{output_filename}_portable.zip")
+    if os.path.exists(archive_path):
+        os.remove(archive_path)
+
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zipf:
+        for root, _, files in os.walk(package_root):
+            for file_name in files:
+                file_path = os.path.join(root, file_name)
+                arcname = os.path.relpath(file_path, os.path.dirname(package_root))
+                zipf.write(file_path, arcname)
+
+    return archive_path
+
 def build_exe():
     project_root = os.path.dirname(os.path.abspath(__file__))
     entry_file = "main.py"
@@ -107,8 +122,7 @@ def build_exe():
             "--include-package=PySide6.QtMultimedia",
             "--include-qt-plugins=multimedia",
             "--include-qt-plugins=platforms",
-            "--include-package=pycaw",
-            "--include-package=qfluentwidgets",
+            "--include-module=pycaw.pycaw",
             "--assume-yes-for-downloads",
             "--output-dir=dist",
             f"--output-filename={output_filename}",
@@ -119,6 +133,8 @@ def build_exe():
             "--nofollow-import-to=tkinter",
             "--nofollow-import-to=idlelib",
             "--nofollow-import-to=pkg_resources",
+            "--nofollow-import-to=PySide6.QtPdf",
+            "--nofollow-import-to=PySide6.QtPdfWidgets",
             "--remove-output",
             entry_file
         ]
@@ -207,7 +223,10 @@ if __name__ == "__main__":
         subprocess.run(launcher_cmd, check=True, cwd=project_root)
         os.remove(launcher_source)
 
+        archive_path = create_release_zip(package_root, output_filename)
+
         print(f"已整理输出目录: {package_root}")
+        print(f"已生成发布压缩包: {archive_path}")
         print(f"运行请双击: {launcher_path}")
     finally:
         with open(endpoints_file_path, "w", encoding="utf-8", newline="\n") as f:

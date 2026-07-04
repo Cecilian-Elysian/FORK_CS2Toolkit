@@ -413,6 +413,7 @@ class VisualHandler(QObject):
         self.is_flashed = False
         self.is_dead = False
         self._boss_key_triggered = False
+        self._boss_key_restore_pending = False
         self._browser_opened = False
         self._browser_muted = False
         self._last_match_kills = -1
@@ -496,6 +497,7 @@ class VisualHandler(QObject):
                 
             if self.boss_key_enabled:
                 self._boss_key_triggered = True
+                self._boss_key_restore_pending = True
                 self.signals.open_boss_key_url.emit(self.boss_key_url, self.boss_key_delay * 1000)
                 
         elif health > 0 and self.is_dead:
@@ -510,25 +512,8 @@ class VisualHandler(QObject):
 
         # 3. 回合重置恢复游戏和连杀重置
         # 触发条件：玩家处于非观战状态，且已存活，且之前触发了 Boss Key 或被静音过
-        if not is_observing and health > 0 and phase in ['freezetime', 'live']:
-            if getattr(self, '_boss_key_triggered', False) or getattr(self, '_browser_muted', False):
-                self._boss_key_triggered = False
-                if self.boss_key_enabled:
-                    if self.boss_key_action == 'close':
-                        self.signals.close_browser.emit()
-                        self._browser_opened = False
-                    elif self.boss_key_action == 'pause':
-                        # 发送按键前先判断当前系统是否在播放音频
-                        # 只有当系统正在发声时，我们才发送“暂停”指令
-                        is_playing = self._is_audio_playing()
-                        if getattr(self, '_browser_muted', False) and is_playing:
-                            self.signals.pause_media.emit()
-                        self._minimize_browser()
-                    
-                    self.signals.restore_game.emit()
-                
-                # 非常重要：重置静音标记，防止无限触发，必须放在 if boss_key_enabled 外面或最后
-                self._browser_muted = False
+        if self._should_restore_boss_key(phase, health):
+            self._restore_boss_key_context()
                         
         if phase == 'freezetime' and getattr(self, '_last_phase', '') != 'freezetime':
             # Round reset
@@ -567,6 +552,34 @@ class VisualHandler(QObject):
             self._last_match_kills = match_stats.get('kills', 0)
         
         self._last_phase = phase
+
+    def _should_restore_boss_key(self, phase, health):
+        if not (self._boss_key_triggered or self._boss_key_restore_pending or self._browser_muted):
+            return False
+
+        if phase == 'freezetime' and getattr(self, '_last_phase', '') != 'freezetime':
+            return True
+
+        if health > 0 and phase == 'live':
+            return True
+
+        return False
+
+    def _restore_boss_key_context(self):
+        self._boss_key_triggered = False
+        self._boss_key_restore_pending = False
+
+        if self.boss_key_action == 'close':
+            self.signals.close_browser.emit()
+            self._browser_opened = False
+        elif self.boss_key_action == 'pause':
+            is_playing = self._is_audio_playing()
+            if self._browser_muted and is_playing:
+                self.signals.pause_media.emit()
+            self._minimize_browser()
+
+        self.signals.restore_game.emit()
+        self._browser_muted = False
 
     def _minimize_cs2(self):
         user32 = ctypes.windll.user32

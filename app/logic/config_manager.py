@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 import zipfile
 import uuid
 
@@ -9,7 +10,8 @@ class ConfigManager:
     # - 管理CS2Toolkit工作目录。
     # - 将所有预设（视频、音效、字体）保存在一个 preconfig.json 文件中。
     def __init__(self, directory_name="CS2Toolkit"):
-        self.work_dir = os.path.join(os.getcwd(), directory_name)
+        self.directory_name = directory_name
+        self.work_dir = self._resolve_work_dir(directory_name)
         self.presets_file = os.path.join(self.work_dir, "preconfig.json")
         self.thumbnails_dir = os.path.join(self.work_dir, "thumbnails")
         self.configs_dir = os.path.join(self.work_dir, "configs")
@@ -33,9 +35,92 @@ class ConfigManager:
             "hide_close_prompt": False,
             "auto_start": False
         }
-        
+
         self._ensure_directories()
+        self._migrate_legacy_work_dir()
         self.load_config()
+
+    def _resolve_work_dir(self, directory_name):
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if not local_appdata:
+            local_appdata = os.path.join(os.path.expanduser("~"), "AppData", "Local")
+        return os.path.join(local_appdata, directory_name)
+
+    def _candidate_legacy_work_dirs(self):
+        seen = set()
+        candidates = []
+
+        def add_candidate(path):
+            if not path:
+                return
+            normalized = os.path.abspath(path)
+            if normalized == os.path.abspath(self.work_dir):
+                return
+            if normalized in seen:
+                return
+            seen.add(normalized)
+            if os.path.isdir(normalized):
+                candidates.append(normalized)
+
+        cwd = os.path.abspath(os.getcwd())
+        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+        add_candidate(os.path.join(cwd, self.directory_name))
+        add_candidate(os.path.join(exe_dir, self.directory_name))
+
+        parent_dirs = {
+            os.path.dirname(cwd),
+            os.path.dirname(exe_dir),
+        }
+        for parent_dir in parent_dirs:
+            if not parent_dir or not os.path.isdir(parent_dir):
+                continue
+            try:
+                for entry in os.scandir(parent_dir):
+                    if not entry.is_dir():
+                        continue
+                    add_candidate(os.path.join(entry.path, self.directory_name))
+            except OSError:
+                continue
+
+        return candidates
+
+    def _find_legacy_work_dir(self):
+        best_candidate = ""
+        best_mtime = -1.0
+
+        for candidate in self._candidate_legacy_work_dirs():
+            candidate_preset = os.path.join(candidate, "preconfig.json")
+            if not os.path.isfile(candidate_preset):
+                continue
+            try:
+                candidate_mtime = os.path.getmtime(candidate_preset)
+            except OSError:
+                candidate_mtime = 0.0
+            if candidate_mtime > best_mtime:
+                best_candidate = candidate
+                best_mtime = candidate_mtime
+
+        return best_candidate
+
+    def _migrate_legacy_work_dir(self):
+        if os.path.exists(self.presets_file):
+            return
+
+        legacy_work_dir = self._find_legacy_work_dir()
+        if not legacy_work_dir:
+            return
+
+        try:
+            for entry in os.scandir(legacy_work_dir):
+                src = entry.path
+                dst = os.path.join(self.work_dir, entry.name)
+                if entry.is_dir():
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+                elif not os.path.exists(dst):
+                    shutil.copy2(src, dst)
+        except OSError as e:
+            print(f"迁移旧版配置目录失败: {e}")
 
     def _ensure_directories(self):
         # 确保工作目录和缩略图目录存在
