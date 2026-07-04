@@ -20,6 +20,14 @@ class ConfigManager:
             "font_presets": [],
             "gsi_sound_presets": [],
             "gsi_events": [],
+            "go_pet": {
+                "enabled": False,
+                "display_mode": "game",
+                "size": 200,
+                "offset_x": 50,
+                "offset_y": 50,
+                "events": []
+            },
             "theme": "Auto",               # Auto, Light, Dark
             "close_behavior": "prompt",    # prompt, tray, exit
             "hide_close_prompt": False,
@@ -41,6 +49,7 @@ class ConfigManager:
             if os.path.exists(self.presets_file):
                 with open(self.presets_file, 'r', encoding='utf-8') as f:
                     loaded_config = json.load(f)
+                    loaded_config.pop("analytics", None)
                     # 确保所有键都存在
                     for key in self.config:
                         if key in loaded_config:
@@ -105,6 +114,14 @@ class ConfigManager:
             "font_presets": [],
             "gsi_sound_presets": [],
             "gsi_events": [],
+            "go_pet": {
+                "enabled": False,
+                "display_mode": "game",
+                "size": 200,
+                "offset_x": 50,
+                "offset_y": 50,
+                "events": []
+            },
             "theme": "Auto",               
             "close_behavior": "prompt",    
             "hide_close_prompt": False,
@@ -140,7 +157,7 @@ class ConfigManager:
     def export_config(self, export_zip_path, name, description="", selections=None):
         import copy
         if selections is None:
-            selections = {"bg": True, "video": True, "sound": True, "font": True, "visual": True, "gsi": True}
+            selections = {"bg": True, "video": True, "sound": True, "font": True, "visual": True, "gsi": True, "go_pet": True}
             
         export_data = copy.deepcopy(self.config)
         included_resources = []
@@ -149,13 +166,32 @@ class ConfigManager:
             with zipfile.ZipFile(export_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 file_map = {} # path -> relative_name
                 
-                def _add_file(abs_path, category):
+                # 剔除纯本地偏好设置（保留 theme，剔除 auto_start 和 close_behavior 等）
+                local_keys = ['auto_start', 'close_behavior', 'hide_close_prompt', 'steam_path', 'gsi_port', 'gsi_sound_presets']
+                for key in local_keys:
+                    export_data.pop(key, None)
+                
+                def _add_path(abs_path, category):
                     if not abs_path or not os.path.exists(abs_path):
                         return ""
                     if abs_path in file_map:
                         return file_map[abs_path]
-                    
-                    basename = os.path.basename(abs_path)
+
+                    basename = os.path.basename(abs_path.rstrip("\\/")) or category
+                    if os.path.isdir(abs_path):
+                        rel_dir = f"resources/{category}/{basename}"
+                        wrote_file = False
+                        for root, _, files in os.walk(abs_path):
+                            for file_name in files:
+                                source = os.path.join(root, file_name)
+                                relative_sub_path = os.path.relpath(source, abs_path).replace("\\", "/")
+                                zipf.write(source, f"{rel_dir}/{relative_sub_path}")
+                                wrote_file = True
+                        if not wrote_file:
+                            zipf.writestr(f"{rel_dir}/.keep", "")
+                        file_map[abs_path] = rel_dir
+                        return rel_dir
+
                     rel_name = f"resources/{category}/{basename}"
                     zipf.write(abs_path, rel_name)
                     file_map[abs_path] = rel_name
@@ -165,76 +201,93 @@ class ConfigManager:
                 if selections.get("video"):
                     included_resources.append("开屏动画预设及配置")
                     for p in export_data.get("video_presets", []):
-                        p["video_path"] = _add_file(p.get("video_path"), "video")
-                        p["thumbnail_path"] = _add_file(p.get("thumbnail_path"), "thumb")
+                        p["video_path"] = _add_path(p.get("video_path"), "video")
+                        p["thumbnail_path"] = _add_path(p.get("thumbnail_path"), "thumb")
                     if export_data.get("current_video_path"):
-                        export_data["current_video_path"] = _add_file(export_data.get("current_video_path"), "video")
+                        export_data["current_video_path"] = _add_path(export_data.get("current_video_path"), "video")
                 else:
-                    export_data["video_presets"] = []
-                    export_data["current_video"] = ""
-                    export_data["current_video_path"] = ""
+                    export_data.pop("video_presets", None)
+                    export_data.pop("current_video", None)
+                    export_data.pop("current_video_path", None)
                     
                 # 2. sound_presets
                 if selections.get("sound"):
                     included_resources.append("启动音效预设及配置")
                     for p in export_data.get("sound_presets", []):
-                        p["sound_path"] = _add_file(p.get("sound_path"), "sound")
+                        p["sound_path"] = _add_path(p.get("sound_path"), "sound")
                     if export_data.get("current_sound_path"):
-                        export_data["current_sound_path"] = _add_file(export_data.get("current_sound_path"), "sound")
+                        export_data["current_sound_path"] = _add_path(export_data.get("current_sound_path"), "sound")
                 else:
-                    export_data["sound_presets"] = []
-                    export_data["current_sound"] = ""
-                    export_data["current_sound_path"] = ""
+                    export_data.pop("sound_presets", None)
+                    export_data.pop("current_sound", None)
+                    export_data.pop("current_sound_path", None)
                     
                 # 3. font_presets
                 if selections.get("font"):
                     included_resources.append("全局字体预设及配置")
                     for p in export_data.get("font_presets", []):
-                        p["font_path"] = _add_file(p.get("font_path"), "font")
+                        p["font_path"] = _add_path(p.get("font_path"), "font")
                     if export_data.get("current_font_path"):
-                        export_data["current_font_path"] = _add_file(export_data.get("current_font_path"), "font")
+                        export_data["current_font_path"] = _add_path(export_data.get("current_font_path"), "font")
                 else:
-                    export_data["font_presets"] = []
-                    export_data["current_font"] = ""
-                    export_data["current_font_path"] = ""
+                    export_data.pop("font_presets", None)
+                    export_data.pop("current_font", None)
+                    export_data.pop("current_font_path", None)
                     
                 # 4. gsi_events
                 if selections.get("gsi"):
                     included_resources.append("游戏内实时音效配置")
                     for e in export_data.get("gsi_events", []):
-                        e["sound"] = _add_file(e.get("sound"), "gsi")
+                        e["sound"] = _add_path(e.get("sound"), "gsi")
                         if "sounds_1_5" in e:
                             for s in e["sounds_1_5"]:
-                                s["path"] = _add_file(s.get("path"), "gsi")
+                                s["path"] = _add_path(s.get("path"), "gsi")
                 else:
-                    export_data["gsi_events"] = []
+                    export_data.pop("gsi_events", None)
                             
                 # 5. visual
                 if selections.get("visual"):
                     included_resources.append("游戏内视觉效果配置")
                     visual = export_data.get("visual", {})
                     if "flash_path" in visual:
-                        visual["flash_path"] = _add_file(visual.get("flash_path"), "flash")
+                        visual["flash_path"] = _add_path(visual.get("flash_path"), "flash")
                     if "death_media_path" in visual:
-                        visual["death_media_path"] = _add_file(visual.get("death_media_path"), "death")
+                        visual["death_media_path"] = _add_path(visual.get("death_media_path"), "death")
                     if "kill_icon_path" in visual:
-                        visual["kill_icon_path"] = _add_file(visual.get("kill_icon_path"), "kill_icon")
+                        visual["kill_icon_path"] = _add_path(visual.get("kill_icon_path"), "kill_icon")
                     if "kill_icons_1_5" in visual:
                         for k in visual["kill_icons_1_5"]:
-                            k["path"] = _add_file(k.get("path"), "kill_icon")
+                            k["path"] = _add_path(k.get("path"), "kill_icon")
                     export_data["visual"] = visual
                 else:
-                    export_data["visual"] = {}
+                    export_data.pop("visual", None)
+
+                # 6. go_pet
+                if selections.get("go_pet"):
+                    included_resources.append("GO桌宠配置与资源")
+                    go_pet = dict(export_data.get("go_pet", {}))
+                    go_pet.pop("offset_x", None)
+                    go_pet.pop("offset_y", None)
+                    events = go_pet.get("events", [])
+                    if isinstance(events, list):
+                        for event in events:
+                            if not isinstance(event, dict):
+                                continue
+                            event["image"] = _add_path(event.get("image"), "go_pet/image")
+                            event["sound"] = _add_path(event.get("sound"), "go_pet/sound")
+                    export_data["go_pet"] = go_pet
+                else:
+                    export_data.pop("go_pet", None)
                 
-                # 6. bg_path
+                # 7. bg_path
                 if selections.get("bg"):
                     if export_data.get("bg_path"):
                         included_resources.append("自定义软件背景")
-                        export_data["bg_path"] = _add_file(export_data.get("bg_path"), "bg")
+                        export_data["bg_path"] = _add_path(export_data.get("bg_path"), "bg")
                 else:
-                    export_data["bg_path"] = ""
+                    export_data.pop("bg_path", None)
                     
-                # 7. current selected items validation
+                # 8. current selected items validation
                 current_video = export_data.get("current_video")
                 if current_video and not export_data.get("current_video_path"):
                     for p in export_data.get("video_presets", []):
@@ -337,10 +390,41 @@ class ConfigManager:
                 for k in visual["kill_icons_1_5"]:
                     k["path"] = _resolve_path(k.get("path"))
             imported_config["visual"] = visual
+
+            # 6. go_pet
+            go_pet_defaults = {
+                "enabled": False,
+                "display_mode": "game",
+                "size": 200,
+                "offset_x": 50,
+                "offset_y": 50,
+                "events": []
+            }
+            go_pet = imported_config.get("go_pet")
+            if isinstance(go_pet, dict):
+                normalized_go_pet = dict(go_pet_defaults)
+                go_pet.pop("streamer_mode", None)
+                normalized_go_pet.update(go_pet)
+                events = go_pet.get("events", [])
+                if isinstance(events, list):
+                    for event in events:
+                        if not isinstance(event, dict):
+                            continue
+                        event["image"] = _resolve_path(event.get("image"))
+                        event["sound"] = _resolve_path(event.get("sound"))
+                    normalized_go_pet["events"] = events
+                imported_config["go_pet"] = normalized_go_pet
+            else:
+                imported_config["go_pet"] = dict(go_pet_defaults)
                 
-            # 6. bg_path
+            # 7. bg_path
             if imported_config.get("bg_path"):
                 imported_config["bg_path"] = _resolve_path(imported_config.get("bg_path"))
+                
+            # 过滤掉不应被覆盖的纯本地设置
+            local_keys_to_protect = ['auto_start', 'close_behavior', 'hide_close_prompt', 'steam_path', 'gsi_port', 'gsi_sound_presets']
+            for key in local_keys_to_protect:
+                imported_config.pop(key, None)
                 
             # Update config
             for key in imported_config:

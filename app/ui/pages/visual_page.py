@@ -43,7 +43,31 @@ class VisualConfigDialog(MessageBoxBase):
             self.select_btn = PushButton("选择图片", self)
             self.select_btn.clicked.connect(self._browse_flash_image)
             selection_layout.addWidget(self.select_btn)
+            
+            self.select_dir_btn = PushButton("选择文件夹", self)
+            self.select_dir_btn.clicked.connect(self._browse_flash_dir)
+            selection_layout.addWidget(self.select_dir_btn)
+            
             self.viewLayout.addLayout(selection_layout)
+            
+            # Scale mode selection
+            scale_layout = QHBoxLayout()
+            scale_layout.addWidget(BodyLabel("缩放模式:"))
+            from qfluentwidgets import ComboBox
+            self.scale_combo = ComboBox(self)
+            self.scale_combo.addItems(["拉伸拉满 (忽略比例)", "保持比例拉满 (可能裁剪)", "保持比例完整 (可能显示不全)"])
+            
+            scale_val = self.visual_config.get('flash_scale_mode', 'stretch')
+            if scale_val == 'stretch':
+                idx = 0
+            elif scale_val == 'keep_aspect_crop':
+                idx = 1
+            else:
+                idx = 2
+            self.scale_combo.setCurrentIndex(idx)
+            self.scale_combo.currentIndexChanged.connect(self._on_flash_scale_changed)
+            scale_layout.addWidget(self.scale_combo, 1)
+            self.viewLayout.addLayout(scale_layout)
 
         elif self.dialog_type == 'death':
             self.titleLabel = SubtitleLabel('自定义死亡画面', self)
@@ -61,6 +85,25 @@ class VisualConfigDialog(MessageBoxBase):
             self.select_btn.clicked.connect(self._browse_death_media)
             selection_layout.addWidget(self.select_btn)
             self.viewLayout.addLayout(selection_layout)
+            
+            # Scale mode selection
+            scale_layout = QHBoxLayout()
+            scale_layout.addWidget(BodyLabel("图片缩放模式:"))
+            from qfluentwidgets import ComboBox
+            self.death_scale_combo = ComboBox(self)
+            self.death_scale_combo.addItems(["拉伸拉满 (忽略比例)", "保持比例拉满 (可能裁剪)", "保持比例完整 (可能显示不全)"])
+            
+            scale_val = self.visual_config.get('death_scale_mode', 'stretch')
+            if scale_val == 'stretch':
+                idx = 0
+            elif scale_val == 'keep_aspect_crop':
+                idx = 1
+            else:
+                idx = 2
+            self.death_scale_combo.setCurrentIndex(idx)
+            self.death_scale_combo.currentIndexChanged.connect(self._on_death_scale_changed)
+            scale_layout.addWidget(self.death_scale_combo, 1)
+            self.viewLayout.addLayout(scale_layout)
 
         elif self.dialog_type == 'boss_key':
             self.titleLabel = SubtitleLabel('一键切屏高级设置', self)
@@ -69,7 +112,7 @@ class VisualConfigDialog(MessageBoxBase):
             url_layout = QHBoxLayout()
             url_layout.addWidget(BodyLabel("打开网页:"))
             self.url_input = LineEdit(self)
-            self.url_input.setText(self.visual_config.get('boss_key_url', 'https://www.bilibili.com/'))
+            self.url_input.setText(self.visual_config.get('boss_key_url', 'https://www.douyin.com/?recommend=1&from_nav=1'))
             self.url_input.textChanged.connect(self._on_url_changed)
             url_layout.addWidget(self.url_input, 1)
             self.viewLayout.addLayout(url_layout)
@@ -87,7 +130,7 @@ class VisualConfigDialog(MessageBoxBase):
             action_layout = QHBoxLayout()
             action_layout.addWidget(BodyLabel("新回合动作:"))
             self.action_combo = ComboBox(self)
-            self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)", "静音浏览器 (通过系统音量混音器)"])
+            self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)", "暂停/播放(推荐视频网站,使用时关闭音乐软件)"])
             
             action_val = self.visual_config.get('boss_key_action', 'none')
             if action_val == 'none':
@@ -108,6 +151,13 @@ class VisualConfigDialog(MessageBoxBase):
         if path:
             self.visual_config['flash_path'] = path
             self.path_label.setText(os.path.basename(path))
+            self.config_manager.set('visual', self.visual_config)
+
+    def _browse_flash_dir(self):
+        path = QFileDialog.getExistingDirectory(self, "选择图片文件夹")
+        if path:
+            self.visual_config['flash_path'] = path
+            self.path_label.setText(os.path.basename(path) + " (文件夹)")
             self.config_manager.set('visual', self.visual_config)
 
     def _browse_death_media(self):
@@ -131,8 +181,28 @@ class VisualConfigDialog(MessageBoxBase):
         elif index == 1:
             val = 'close'
         else:
-            val = 'mute'
+            val = 'pause'
         self.visual_config['boss_key_action'] = val
+        self.config_manager.set('visual', self.visual_config)
+
+    def _on_flash_scale_changed(self, index):
+        if index == 0:
+            val = 'stretch'
+        elif index == 1:
+            val = 'keep_aspect_crop'
+        else:
+            val = 'keep_aspect_fit'
+        self.visual_config['flash_scale_mode'] = val
+        self.config_manager.set('visual', self.visual_config)
+
+    def _on_death_scale_changed(self, index):
+        if index == 0:
+            val = 'stretch'
+        elif index == 1:
+            val = 'keep_aspect_crop'
+        else:
+            val = 'keep_aspect_fit'
+        self.visual_config['death_scale_mode'] = val
         self.config_manager.set('visual', self.visual_config)
 
 class KillIconDialog(MessageBoxBase):
@@ -205,6 +275,20 @@ class KillIconDialog(MessageBoxBase):
         height_layout.addWidget(self.height_value_label)
         basic_layout.addLayout(height_layout)
 
+        # 图标底部偏移设置
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addWidget(BodyLabel("距离底部位置:"))
+        self.bottom_slider = Slider(Qt.Horizontal, self)
+        self.bottom_slider.setRange(0, 500)
+        self.bottom_slider.setValue(self.visual_config.get('kill_icon_bottom', 100))
+        
+        self.bottom_value_label = BodyLabel(f"{self.bottom_slider.value()} px")
+        self.bottom_slider.valueChanged.connect(self._on_bottom_changed)
+        
+        bottom_layout.addWidget(self.bottom_slider, 1)
+        bottom_layout.addWidget(self.bottom_value_label)
+        basic_layout.addLayout(bottom_layout)
+
         self.viewLayout.addWidget(self.basic_container)
 
         # 高级设置容器
@@ -257,6 +341,11 @@ class KillIconDialog(MessageBoxBase):
         self.visual_config['kill_icon_height'] = value
         self.config_manager.set('visual', self.visual_config)
 
+    def _on_bottom_changed(self, value):
+        self.bottom_value_label.setText(f"{value} px")
+        self.visual_config['kill_icon_bottom'] = value
+        self.config_manager.set('visual', self.visual_config)
+
     def _browse_basic_image(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择击杀图标", "", "媒体文件 (*.png *.jpg *.jpeg *.bmp *.gif *.mp4 *.webm)")
         if path:
@@ -298,16 +387,19 @@ class VisualPage(ScrollArea):
         self.visual_config = self.config_manager.get('visual', {
             'flash_enabled': False,
             'flash_path': '',
+            'flash_scale_mode': 'stretch',
             'death_media_enabled': False,
             'death_media_path': '',
+            'death_scale_mode': 'stretch',
             'boss_key_enabled': False,
-            'boss_key_url': 'https://www.bilibili.com/',
+            'boss_key_url': 'https://www.douyin.com/?recommend=1&from_nav=1',
             'boss_key_delay': 0,
             'boss_key_action': 'none',
             'kill_icon_enabled': False,
             'kill_icon_is_advanced': False,
             'kill_icon_width': 120,
             'kill_icon_height': 120,
+            'kill_icon_bottom': 100,
             'kill_icon_path': '',
             'kill_icons_1_5': [{} for _ in range(5)]
         })

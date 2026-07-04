@@ -16,6 +16,8 @@ from app.logic.steam_utils import SteamUtils, PathValidator
 from app.logic.sound_replacer import SoundReplacer
 from app.logic.gsi_manager import GSIManager
 from app.logic.visual_handler import VisualHandler
+from app.logic.go_pet_manager import GoPetManager
+from app.release_endpoints import UPDATE_URL
 from app.ui.animations import AnimationManager
 from app.ui.pages.home_page import HomePage
 from app.ui.integrated_sound_page import IntegratedSoundPage
@@ -34,7 +36,8 @@ class UpdateSignalEmitter(QObject):
 class CS2Tool(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.version = "1.3.0"
+        self.version = "1.4.0"
+        self.repo_url = "https://github.com/clover-233/CS2Toolkit"
         self.is_dark_mode = False
         self._force_quit = False
         self.config_manager = ConfigManager()
@@ -54,6 +57,7 @@ class CS2Tool(FluentWindow):
         self.animation_manager = AnimationManager(self)
         self.gsi_manager = GSIManager(config_manager=self.config_manager)
         self.visual_handler = VisualHandler(self.config_manager)
+        self.go_pet_manager = GoPetManager(self.config_manager)
         self.steam_path = "" 
         self.video_path = ""
         self.font_path = ""
@@ -199,6 +203,7 @@ class CS2Tool(FluentWindow):
         from app.ui.pages.about_page import AboutPage
         from app.ui.pages.setting_page import SettingPage
         from app.ui.pages.visual_page import VisualPage
+        from app.ui.pages.go_pet_page import GoPetPage
 
         self.home_tab = HomePage(self)
         self.home_tab.setObjectName("home_tab")
@@ -220,6 +225,9 @@ class CS2Tool(FluentWindow):
         self.visual_tab = VisualPage(self.config_manager, self)
         self.visual_tab.setObjectName("visual_tab")
 
+        self.go_pet_tab = GoPetPage(self.config_manager, self)
+        self.go_pet_tab.setObjectName("go_pet_tab")
+
         self.integrated_sound_page = IntegratedSoundPage(self.gsi_manager, self.config_manager, self)
         self.integrated_sound_page.setObjectName("integrated_sound_page")
         
@@ -231,6 +239,7 @@ class CS2Tool(FluentWindow):
         self.addSubInterface(self.customize_tab, FIF.BRUSH, "个性化替换")
         self.addSubInterface(self.integrated_sound_page, FIF.HEADPHONE, "游戏内音效设置")
         self.addSubInterface(self.visual_tab, FIF.VIEW, "游戏内视觉设置")
+        self.addSubInterface(self.go_pet_tab, FIF.HEART, "GO桌宠")
         self.addSubInterface(self.setting_tab, FIF.SETTING, "设置", NavigationItemPosition.BOTTOM)
         self.addSubInterface(self.about_tab, FIF.INFO, "关于", NavigationItemPosition.BOTTOM)
 
@@ -532,6 +541,7 @@ class CS2Tool(FluentWindow):
             # This is where the event matching logic will go
             self.integrated_sound_page.process_game_state(game_state)
             self.visual_handler.process_gsi(game_state)
+            self.go_pet_manager.process_gsi(game_state)
 
 
     def browse_font_file(self):
@@ -848,8 +858,7 @@ class CS2Tool(FluentWindow):
               "http": None,
               "https": None,
             }
-            # 从服务器json文件读取版本信息
-            response = requests.get("https://gitee.com/clover23333/CS2-ToolKit/raw/master/version.json", timeout=5, proxies=proxies)
+            response = requests.get(UPDATE_URL, timeout=5, proxies=proxies)
             if response.status_code == 200:
                 latest_version_data = response.json()
                 latest_version = latest_version_data.get("version")
@@ -863,9 +872,9 @@ class CS2Tool(FluentWindow):
     def show_update_dialog(self, version_data):
         # json文件格式
         # {  
-        #   "version": "我是最新的版本号(✪ω✪)",
-        #   "update_log": "我是更新日志的具体说明(*^▽^*)",
-        #   "download_url": "我是下载链接o(´^｀)o"
+        #   "version": "最新的版本号(✪ω✪)",
+        #   "update_log": "更新日志的具体说明(*^▽^*)",
+        #   "download_url": "下载链接o(´^｀)o"
         # }
         if version_data.get("is_latest", False):
             self.show_info("检查更新", "当前已是最新版本")

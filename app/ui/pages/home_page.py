@@ -3,6 +3,7 @@ import requests
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpacerItem, QSizePolicy, QFormLayout
 from PySide6.QtCore import Qt, Signal
 from qfluentwidgets import (SubtitleLabel, TitleLabel, BodyLabel, ToolButton, FluentIcon, SimpleCardWidget, LineEdit, PrimaryPushButton, InfoBar, ScrollArea, SettingCardGroup, SwitchSettingCard)
+from app.release_endpoints import ANNOUNCEMENT_URL
 from ..styles import UIStyles
 
 class HomePage(ScrollArea):
@@ -103,6 +104,15 @@ class HomePage(ScrollArea):
         self.boss_key_switch_card.switchButton.checkedChanged.connect(self._on_boss_key_toggled)
         self.control_group.addSettingCard(self.boss_key_switch_card)
 
+        self.go_pet_switch_card = SwitchSettingCard(
+            icon=FluentIcon.HEART,
+            title="GO桌宠",
+            content="在游戏内或主播输出窗口显示互动桌宠",
+            parent=self.control_group
+        )
+        self.go_pet_switch_card.switchButton.checkedChanged.connect(self._on_go_pet_toggled)
+        self.control_group.addSettingCard(self.go_pet_switch_card)
+
         self.layout.addWidget(self.control_group)
 
         # System Status Section
@@ -197,6 +207,11 @@ class HomePage(ScrollArea):
         self.boss_key_switch_card.switchButton.setChecked(visual_config.get('boss_key_enabled', False))
         self.boss_key_switch_card.switchButton.blockSignals(False)
 
+        go_pet_config = self.parent_window.config_manager.get('go_pet', {})
+        self.go_pet_switch_card.switchButton.blockSignals(True)
+        self.go_pet_switch_card.switchButton.setChecked(go_pet_config.get('enabled', False))
+        self.go_pet_switch_card.switchButton.blockSignals(False)
+
     def _on_flash_toggled(self, is_checked):
         if hasattr(self.parent_window, 'visual_tab'):
             self.parent_window.visual_tab.flash_card.switch_btn.setChecked(is_checked)
@@ -213,12 +228,27 @@ class HomePage(ScrollArea):
         if hasattr(self.parent_window, 'visual_tab'):
             self.parent_window.visual_tab.boss_key_card.switch_btn.setChecked(is_checked)
 
+    def _on_go_pet_toggled(self, is_checked):
+        go_pet_config = dict(self.parent_window.config_manager.get('go_pet', {}))
+        go_pet_config['enabled'] = is_checked
+        self.parent_window.config_manager.set('go_pet', go_pet_config)
+
+        if hasattr(self.parent_window, 'go_pet_tab'):
+            self.parent_window.go_pet_tab.pet_config = go_pet_config
+            self.parent_window.go_pet_tab.enable_card.switchButton.blockSignals(True)
+            self.parent_window.go_pet_tab.enable_card.switchButton.setChecked(is_checked)
+            self.parent_window.go_pet_tab.enable_card.switchButton.blockSignals(False)
+            self.parent_window.go_pet_tab._sync_display_mode_ui()
+
+        if hasattr(self.parent_window, 'go_pet_manager'):
+            self.parent_window.go_pet_manager.set_enabled(is_checked)
+
     def _fetch_announcement(self):
         def fetch_task():
             try:
                 proxies = {"http": None, "https": None}
                 # Try fetching announcement.json
-                response = requests.get("https://gitee.com/clover23333/CS2-ToolKit/raw/master/announcement.json", timeout=5, proxies=proxies)
+                response = requests.get(ANNOUNCEMENT_URL, timeout=5, proxies=proxies)
                 if response.status_code == 200:
                     data = response.json()
                     title = data.get("title", "最新公告")

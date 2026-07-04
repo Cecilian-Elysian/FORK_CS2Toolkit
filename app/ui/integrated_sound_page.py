@@ -563,6 +563,22 @@ class IntegratedSoundPage(QWidget):
         match_stats = player.get('match_stats', {})
         current_kills = match_stats.get('kills', 0)
         current_deaths = match_stats.get('deaths', 0)
+        
+        # Tracking grenade ammo
+        weapons = player.get('weapons', {})
+        if not hasattr(self, 'previous_grenade_ammo'):
+            self.previous_grenade_ammo = {}
+            
+        current_grenade_ammo = {}
+        for weapon_slot, weapon_info in weapons.items():
+            weapon_name = weapon_info.get('name')
+            # 只有道具才会触发投出事件
+            if weapon_name and weapon_name.startswith('weapon_') and weapon_name in ['weapon_flashbang', 'weapon_smokegrenade', 'weapon_hegrenade', 'weapon_molotov', 'weapon_incgrenade', 'weapon_decoy']:
+                # CS2 GSI 燃烧瓶T是molotov, CT是incgrenade，我们在配置里统称molotov
+                if weapon_name == 'weapon_incgrenade':
+                    weapon_name = 'weapon_molotov'
+                current_grenade_ammo[weapon_name] = current_grenade_ammo.get(weapon_name, 0) + weapon_info.get('ammo_reserve', 0)
+        
         observer_slot = player.get('observer_slot')
         current_round_phase = game_state.get('round', {}).get('phase', 'unknown')
         player_state = player.get('state', {})
@@ -625,6 +641,7 @@ class IntegratedSoundPage(QWidget):
             self.previous_observing_state = is_observing
             self.previous_health = current_health
             self.previous_is_alive = is_alive
+            self.previous_grenade_ammo = current_grenade_ammo
             return  # 直接返回，避免在观战状态切换时触发音效
         
         # 如果当前在观战状态，只处理死亡音效，跳过其他音效
@@ -682,6 +699,44 @@ class IntegratedSoundPage(QWidget):
         if not is_alive and self.previous_is_alive:
             print(f"[GSI音效] 玩家死亡，重置连杀数: {self.round_kills} -> 0")
             self.round_kills = 0
+            
+        # 检查道具投出事件
+        if is_in_round and is_alive and not skip_non_death_events:
+            for nade, current_amt in current_grenade_ammo.items():
+                prev_amt = self.previous_grenade_ammo.get(nade, 0)
+                # 弹药减少，且不是从有到无的掉落（无法完美区分丢弃和投掷，但投掷会减备弹，所以如果减了1通常是投出）
+                if prev_amt > current_amt:
+                    # 触发了道具投出
+                    thrown_nade = nade
+                    best_sound = None
+                    best_volume = 50
+                    matched_specificity = 0
+                    
+                    for i in range(self.event_list.count()):
+                        item = self.event_list.item(i)
+                        widget = self.event_list.itemWidget(item)
+                        if not hasattr(widget, 'get_config'):
+                            continue
+                        config = widget.get_config()
+                        c_event = config.get('event')
+                        c_weapon = config.get('weapon')
+                        c_sound = config.get('sound')
+                        
+                        if c_event == 'grenade_thrown' and c_sound and os.path.exists(c_sound):
+                            if c_weapon == thrown_nade and matched_specificity < 2:
+                                best_sound = c_sound
+                                best_volume = config.get('volume', 50)
+                                matched_specificity = 2
+                            elif c_weapon == 'all_grenades' and matched_specificity < 1:
+                                best_sound = c_sound
+                                best_volume = config.get('volume', 50)
+                                matched_specificity = 1
+                                
+                    if best_sound:
+                        self.sound_player.play_sound(best_sound, best_volume, channel="grenade")
+                        print(f"[GSI音效] 触发道具投出音效: {thrown_nade}, 音量: {best_volume}%")
+                        
+        self.previous_grenade_ammo = current_grenade_ammo
         
         # 检查玩家死亡事件
         if current_deaths > self.previous_deaths:

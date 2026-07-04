@@ -108,10 +108,54 @@ class FontReplacer:
             return {"success": False, "error": str(e)}
 
     def extract_font_name(self, font_path):
-        # 从字体文件路径提取字体名称（去掉扩展名）
+        # 尝试从 TTF 文件中提取真实的字体 Family Name
+        # 如果提取失败，则回退到使用文件名
+        try:
+            with open(font_path, 'rb') as f:
+                f.seek(4)
+                num_tables = int.from_bytes(f.read(2), 'big')
+                f.seek(12)
+                for _ in range(num_tables):
+                    tag = f.read(4)
+                    _checksum = f.read(4)
+                    offset = int.from_bytes(f.read(4), 'big')
+                    _length = int.from_bytes(f.read(4), 'big')
+                    if tag == b'name':
+                        f.seek(offset)
+                        _format = int.from_bytes(f.read(2), 'big')
+                        num_records = int.from_bytes(f.read(2), 'big')
+                        string_offset = int.from_bytes(f.read(2), 'big')
+                        
+                        font_names = {}
+                        for _ in range(num_records):
+                            platform_id = int.from_bytes(f.read(2), 'big')
+                            encoding_id = int.from_bytes(f.read(2), 'big')
+                            _lang_id = int.from_bytes(f.read(2), 'big')
+                            name_id = int.from_bytes(f.read(2), 'big')
+                            length = int.from_bytes(f.read(2), 'big')
+                            record_offset = int.from_bytes(f.read(2), 'big')
+                            
+                            if name_id == 1: # 1: Font Family Name
+                                pos = f.tell()
+                                f.seek(offset + string_offset + record_offset)
+                                name_bytes = f.read(length)
+                                if platform_id == 3 and encoding_id in (0, 1): # Windows
+                                    font_names['win'] = name_bytes.decode('utf-16-be', errors='ignore')
+                                elif platform_id == 1 and encoding_id == 0: # Mac
+                                    font_names['mac'] = name_bytes.decode('mac_roman', errors='ignore')
+                                f.seek(pos)
+                        
+                        if 'win' in font_names:
+                            return font_names['win']
+                        elif 'mac' in font_names:
+                            return font_names['mac']
+                        break
+        except Exception as e:
+            print(f"解析TTF字体名称失败: {e}")
+            
+        # 回退到使用文件名
         filename = os.path.basename(font_path)
-        font_name = os.path.splitext(filename)[0]
-        return font_name
+        return os.path.splitext(filename)[0]
     
     def replace_font(self, font_path, progress_callback=None):
         # 执行字体替换

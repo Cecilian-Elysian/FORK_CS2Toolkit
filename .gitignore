@@ -5,6 +5,7 @@ __pycache__/
 
 # Nuitka output
 dist/
+nuitka-crash-report*.xml
 
 # IDE / tools
 .omc/
@@ -20,4 +21,9 @@ configs/
 imported/
 thumbnails/
 preconfig.json
+sponsorship.jpg
+release_endpoints.local.json
 CS2Toolkit/
+
+# Logs
+*.log

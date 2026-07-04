@@ -1,0 +1,5 @@
+{
+  "version": "1.4.0",
+  "update_log": "1. 新增 GO桌宠功能，支持多种 GSI 互动事件、图片/WebM 资源与主播输出窗口。\n2. 游戏内视觉与实时音效功能增加更多自定义能力，并优化 GSI 响应速度。\n3. 修复桌宠事件、主题适配、旧配置导入兼容、层级遮挡与多项稳定性问题。",
+  "download_url": "https://github.com/clover-233/CS2Toolkit/releases/latest"
+}

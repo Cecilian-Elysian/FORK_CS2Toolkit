@@ -152,7 +152,8 @@ class ExportConfigDialog(MessageBoxBase):
             "sound": "启动音效",
             "font": "全局字体",
             "visual": "游戏内视觉效果 (闪白/击杀/死亡)",
-            "gsi": "游戏内实时音效配置"
+            "gsi": "游戏内实时音效配置",
+            "go_pet": "GO桌宠配置与资源"
         }
         
         for key, label in options.items():
@@ -681,8 +682,12 @@ class SettingPage(ScrollArea):
             if hasattr(self.parent_window, 'visual_tab'):
                 self.parent_window.visual_tab.config_manager = self.config_manager
                 self.parent_window.visual_tab._update_ui_from_config()
+            if hasattr(self.parent_window, 'go_pet_tab'):
+                self.parent_window.go_pet_tab.reload_from_config()
+            if hasattr(self.parent_window, 'go_pet_manager'):
+                self.parent_window.go_pet_manager._update_config()
             
-            # 刷新主题
+            # 刷新主题 (根据导入的配置)
             theme_val = self.config_manager.get("theme", "Auto")
             idx_map = {"Light": 0, "Dark": 1, "Auto": 2}
             self.themeCard.comboBox.blockSignals(True)
@@ -722,8 +727,19 @@ class SettingPage(ScrollArea):
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS)
             if enable:
-                exe_path = sys.executable
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"')
+                # 判断是否为打包后的独立可执行文件
+                if getattr(sys, 'frozen', False):
+                    exe_path = sys.executable
+                else:
+                    # 如果在开发环境，使用 main.py
+                    main_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "main.py"))
+                    exe_path = f'"{sys.executable}" "{main_py}"'
+                
+                # 如果只是字符串，加上引号防止路径包含空格
+                if not exe_path.startswith('"'):
+                    exe_path = f'"{exe_path}"'
+                    
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
             else:
                 try:
                     winreg.DeleteValue(key, app_name)

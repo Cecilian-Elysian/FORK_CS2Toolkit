@@ -43,7 +43,8 @@ class AddEventDialog(MessageBoxBase):
             "--- 其他音效 ---",
             "切换到",
             "换弹", 
-            "使用武器击杀"
+            "使用武器击杀",
+            "道具投出"
         ]
         self.event_type_combo.addItems(event_items)
         self.event_type_combo.currentIndexChanged.connect(self._on_event_type_changed)
@@ -57,14 +58,14 @@ class AddEventDialog(MessageBoxBase):
         weapon_names_cn = [
             "所有枪械",
             "AK-47", "M4A4", "M4A1-S消音版", "AWP",
-            "沙漠之鹰", "格洛克18", "USP消音版", "P250",
+            "沙漠之鹰", "R8 左轮", "格洛克18", "USP消音版", "P250",
             "Five-SeveN", "Tec-9", "CZ75-Auto", "P2000",
-            "双持贝瑞塔", "P90", "PP-野牛", "MAC-10",
-            "MP7", "MP9", "UMP-45", "XM1014",
+            "双持贝瑞塔", "P90", "PP-Bizon", "MAC-10",
+            "MP7", "MP9", "MP5-SD", "UMP-45", "XM1014",
             "短管霰弹枪", "新星", "MAG-7", "内格夫",
             "M249", "加利尔AR", "法玛斯", "SG 553",
             "AUG", "SCAR-20", "G3SG1", "SSG 08",
-            "默认刀", "T方默认刀", "刺刀", "海豹短刀", "折叠刀",
+            "电击枪 (Zeus x27)", "默认刀", "T方默认刀", "刺刀", "海豹短刀", "折叠刀",
             "穿肠刀", "爪子刀", "M9刺刀", "猎杀者匕首", "弯刀",
             "鲍伊猎刀", "蝴蝶刀", "暗影双匕", "系绳匕首", "求生匕首",
             "熊刀", "折刀", "流浪者匕首", "短剑", "锯齿爪刀",
@@ -75,31 +76,43 @@ class AddEventDialog(MessageBoxBase):
         weapon_names_en = [
             "all_weapons",
             "weapon_ak47", "weapon_m4a1", "weapon_m4a1_silencer", "weapon_awp",
-            "weapon_deagle", "weapon_glock", "weapon_usp_silencer", "weapon_p250",
+            "weapon_deagle", "weapon_revolver", "weapon_glock", "weapon_usp_silencer", "weapon_p250",
             "weapon_fiveseven", "weapon_tec9", "weapon_cz75a", "weapon_p2000",
             "weapon_elite", "weapon_p90", "weapon_bizon", "weapon_mac10",
-            "weapon_mp7", "weapon_mp9", "weapon_ump45", "weapon_xm1014",
+            "weapon_mp7", "weapon_mp9", "weapon_mp5sd", "weapon_ump45", "weapon_xm1014",
             "weapon_sawedoff", "weapon_nova", "weapon_mag7", "weapon_negev",
             "weapon_m249", "weapon_galilar", "weapon_famas", "weapon_sg556",
             "weapon_aug", "weapon_scar20", "weapon_g3sg1", "weapon_ssg08",
-            "weapon_knife", "weapon_knife_t", "weapon_bayonet", "weapon_knife_css", "weapon_knife_flip",
+            "weapon_taser", "weapon_knife", "weapon_knife_t", "weapon_bayonet", "weapon_knife_css", "weapon_knife_flip",
             "weapon_knife_gut", "weapon_knife_karambit", "weapon_knife_m9_bayonet", "weapon_knife_huntsman", "weapon_knife_falchion",
             "weapon_knife_survival_bowie", "weapon_knife_butterfly", "weapon_knife_push", "weapon_knife_cord", "weapon_knife_tactical",
             "weapon_knife_ursus", "weapon_knife_gypsy_jackknife", "weapon_knife_nomad", "weapon_knife_stiletto", "weapon_knife_widowmaker",
             "weapon_knife_skeleton", "weapon_knife_kukri"
         ]
         
+        self.grenade_names_cn = [
+            "所有道具", "闪光弹", "烟雾弹", "高爆手雷", "燃烧弹/燃烧瓶", "诱饵弹"
+        ]
+        self.grenade_names_en = [
+            "all_grenades", "weapon_flashbang", "weapon_smokegrenade", "weapon_hegrenade", "weapon_molotov", "weapon_decoy"
+        ]
+        
         # 创建中英文映射字典
         self.weapon_cn_to_en = dict(zip(weapon_names_cn, weapon_names_en))
         self.weapon_en_to_cn = dict(zip(weapon_names_en, weapon_names_cn))
+        self.weapon_cn_to_en.update(dict(zip(self.grenade_names_cn, self.grenade_names_en)))
+        self.weapon_en_to_cn.update(dict(zip(self.grenade_names_en, self.grenade_names_cn)))
+        
+        # 保留原有的列表以供切换
+        self.weapon_names_cn_list = weapon_names_cn
         
         self.weapon_name_input.addItems(weapon_names_cn)
         
         # 添加搜索/自动补全功能
-        completer = QCompleter(weapon_names_cn, self)
-        completer.setFilterMode(Qt.MatchContains)
-        completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.weapon_name_input.setCompleter(completer)
+        self.completer = QCompleter(weapon_names_cn, self)
+        self.completer.setFilterMode(Qt.MatchContains)
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.weapon_name_input.setCompleter(self.completer)
         
         self.weapon_name_label = BodyLabel("武器名称:")
         form_layout.addRow(self.weapon_name_label, self.weapon_name_input)
@@ -258,12 +271,37 @@ class AddEventDialog(MessageBoxBase):
             self.weapon_name_input.hide()
             self.browse_sound_btn.setEnabled(True)
             self.sound_path_input.setEnabled(True)
-        else:  # 其他事件：使用武器击杀、切换到、换弹
+        elif index == 9: # 道具投出
+            self.weapon_name_label.setText("道具名称:")
             self.weapon_name_label.show()
             self.weapon_name_input.show()
             self.weapon_name_input.setEnabled(True)
-            if self.weapon_name_input.currentText() == "全局事件":
+            
+            # 切换为道具列表
+            self.weapon_name_input.clear()
+            self.weapon_name_input.addItems(self.grenade_names_cn)
+            
+            from PySide6.QtCore import QStringListModel
+            model = QStringListModel(self.grenade_names_cn)
+            self.completer.setModel(model)
+        else:  # 其他事件：使用武器击杀、切换到、换弹
+            self.weapon_name_label.setText("武器名称:")
+            self.weapon_name_label.show()
+            self.weapon_name_input.show()
+            self.weapon_name_input.setEnabled(True)
+            
+            # 切换为武器列表
+            current_text = self.weapon_name_input.currentText()
+            self.weapon_name_input.clear()
+            self.weapon_name_input.addItems(self.weapon_names_cn_list)
+            if current_text in self.weapon_names_cn_list:
+                self.weapon_name_input.setCurrentText(current_text)
+            elif current_text == "全局事件" or current_text in self.grenade_names_cn:
                 self.weapon_name_input.setCurrentText("")
+                
+            from PySide6.QtCore import QStringListModel
+            model = QStringListModel(self.weapon_names_cn_list)
+            self.completer.setModel(model)
     
     def _on_volume_changed(self, value):
         # 当音量滑块值改变时更新显示
@@ -329,7 +367,8 @@ class AddEventDialog(MessageBoxBase):
             4: "player_death",   # 玩家死亡
             6: "active",         # 切换到
             7: "reloading",      # 换弹
-            8: "weapon_kill"     # 使用武器击杀
+            8: "weapon_kill",    # 使用武器击杀
+            9: "grenade_thrown"  # 道具投出
         }
         event_type = event_mapping.get(event_index, "active")
         
@@ -392,7 +431,8 @@ class AddEventDialog(MessageBoxBase):
             "player_death": 4,   # 玩家死亡
             "active": 6,         # 切换到
             "reloading": 7,      # 换弹
-            "weapon_kill": 8     # 使用武器击杀
+            "weapon_kill": 8,    # 使用武器击杀
+            "grenade_thrown": 9  # 道具投出
         }
         event_index = event_index_mapping.get(event_type, 6)
         self.event_type_combo.setCurrentIndex(event_index)
