@@ -51,6 +51,9 @@ class IntegratedSoundPage(QWidget):
         self.round_kills = 0  # 当前回合的击杀数
         self.previous_round_kills = 0  # 上一次记录的回合击杀数
         
+        # 道具投出防抖记录
+        self.last_grenade_throw_time = {}
+        
         self.init_ui()
         self._connect_signals()
         self.load_events()
@@ -710,6 +713,15 @@ class IntegratedSoundPage(QWidget):
                 current_amt = current_grenade_ammo.get(nade, 0)
                 # 弹药减少，且不是从有到无的掉落（无法完美区分丢弃和投掷，但投掷会减备弹，所以如果减了1通常是投出）
                 if prev_amt > current_amt:
+                    # 加入防抖机制，避免CS2 GSI状态抖动导致的连续多次触发
+                    current_time = time.time()
+                    last_throw_time = self.last_grenade_throw_time.get(nade, 0)
+                    if current_time - last_throw_time < 1.0:  # 1秒内同一种雷不重复触发投掷
+                        print(f"[GSI音效] 忽略连续触发的道具投出事件: {nade}")
+                        continue
+                    
+                    self.last_grenade_throw_time[nade] = current_time
+                    
                     # 触发了道具投出
                     thrown_nade = nade
                     best_sound = None
