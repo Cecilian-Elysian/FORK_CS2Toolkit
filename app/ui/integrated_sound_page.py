@@ -577,7 +577,10 @@ class IntegratedSoundPage(QWidget):
                 # CS2 GSI 燃烧瓶T是molotov, CT是incgrenade，我们在配置里统称molotov
                 if weapon_name == 'weapon_incgrenade':
                     weapon_name = 'weapon_molotov'
-                current_grenade_ammo[weapon_name] = current_grenade_ammo.get(weapon_name, 0) + weapon_info.get('ammo_reserve', 0)
+                # 道具的数量 = 本身(1) + 备弹数(如果有)
+                # CS2 GSI 中，道具本身占据一个槽位，有的变体里可能没有 ammo_reserve 字段
+                amt = 1 + weapon_info.get('ammo_reserve', 0)
+                current_grenade_ammo[weapon_name] = current_grenade_ammo.get(weapon_name, 0) + amt
         
         observer_slot = player.get('observer_slot')
         current_round_phase = game_state.get('round', {}).get('phase', 'unknown')
@@ -702,8 +705,9 @@ class IntegratedSoundPage(QWidget):
             
         # 检查道具投出事件
         if is_in_round and is_alive and not skip_non_death_events:
-            for nade, current_amt in current_grenade_ammo.items():
-                prev_amt = self.previous_grenade_ammo.get(nade, 0)
+            # 遍历之前持有的所有道具，检查是否数量减少或消失
+            for nade, prev_amt in self.previous_grenade_ammo.items():
+                current_amt = current_grenade_ammo.get(nade, 0)
                 # 弹药减少，且不是从有到无的掉落（无法完美区分丢弃和投掷，但投掷会减备弹，所以如果减了1通常是投出）
                 if prev_amt > current_amt:
                     # 触发了道具投出
