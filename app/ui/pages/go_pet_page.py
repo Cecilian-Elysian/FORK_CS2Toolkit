@@ -101,7 +101,7 @@ class GoPetPage(ScrollArea):
         super().__init__(parent=parent)
         self.config_manager = config_manager
         self.parent_window = parent
-        
+
         self.view = QWidget(self)
         self.view.setObjectName("view")
         self.layout = QVBoxLayout(self.view)
@@ -109,15 +109,15 @@ class GoPetPage(ScrollArea):
         self.layout.setSpacing(8)
         self.layout.setAlignment(Qt.AlignTop)
         self.event_widgets = []
-        
+
         self.setWidget(self.view)
         self.setWidgetResizable(True)
         self.setObjectName("goPetPage")
         self.setStyleSheet("QScrollArea {background: transparent; border: none;} #view {background: transparent;}")
-        
+
         self._init_config()
         self._setup_ui()
-        
+
     def _init_config(self):
         self.pet_config = self.config_manager.get('go_pet', {
             'enabled': False,
@@ -129,7 +129,7 @@ class GoPetPage(ScrollArea):
         })
         self.pet_config.setdefault('display_mode', 'game')
         removed_legacy_key = self.pet_config.pop('streamer_mode', None) is not None
-        
+
         # Normalize old / damaged config so the UI can always render correctly.
         events = self.pet_config.get('events', [])
         if not isinstance(events, list):
@@ -171,11 +171,11 @@ class GoPetPage(ScrollArea):
 
     def _save_config(self):
         self.config_manager.set('go_pet', self.pet_config)
-        
+
     def _setup_ui(self):
         # 1. 基础设置
         self.basic_group = SettingCardGroup("基础设置", self.view)
-        
+
         self.enable_card = SwitchSettingCard(
             icon=FIF.HEART,
             title="启用 GO 桌宠",
@@ -198,12 +198,12 @@ class GoPetPage(ScrollArea):
         self.display_mode_card.comboBox.setCurrentIndex(0 if initial_display_mode == "game" else 1)
         self.display_mode_card.comboBox.currentIndexChanged.connect(self._on_display_mode_changed)
         self.basic_group.addSettingCard(self.display_mode_card)
-        
+
         self.layout.addWidget(self.basic_group)
-        
+
         # 2. 外观设置
         self.appearance_group = SettingCardGroup("外观与位置", self.view)
-        
+
         # Edit mode
         self.edit_mode_card = SettingCard(
             icon=FIF.EDIT,
@@ -218,7 +218,7 @@ class GoPetPage(ScrollArea):
         self.edit_mode_card.hBoxLayout.addWidget(self.edit_switch, 0, Qt.AlignmentFlag.AlignRight)
         self.edit_mode_card.hBoxLayout.addSpacing(16)
         self.appearance_group.addSettingCard(self.edit_mode_card)
-        
+
         # Size
         self.size_card = SettingCard(
             icon=FIF.ZOOM_IN,
@@ -232,16 +232,16 @@ class GoPetPage(ScrollArea):
         self.size_slider.setValue(self.pet_config.get('size', 200))
         self.size_label = BodyLabel(f"{self.size_slider.value()} px")
         self.size_slider.valueChanged.connect(self._on_size_changed)
-        
+
         size_layout.addWidget(self.size_slider, 1)
         size_layout.addWidget(self.size_label)
         self.size_card.hBoxLayout.addLayout(size_layout)
         self.size_card.hBoxLayout.addSpacing(16)
         self.appearance_group.addSettingCard(self.size_card)
-        
+
         self.layout.addWidget(self.appearance_group)
         self._sync_display_mode_ui()
-        
+
         # 3. 事件配置
         self.event_section_title = SubtitleLabel("互动事件配置", self.view)
         self.layout.addWidget(self.event_section_title)
@@ -280,7 +280,7 @@ class GoPetPage(ScrollArea):
 
         self.layout.addWidget(self.event_card)
         self._apply_event_theme_styles()
-        
+
         self.load_events()
 
     def _on_enable_changed(self, is_checked):
@@ -288,6 +288,8 @@ class GoPetPage(ScrollArea):
         self._save_config()
         if hasattr(self.parent_window, 'go_pet_manager'):
             self.parent_window.go_pet_manager.set_enabled(is_checked)
+        if hasattr(self.parent_window, 'update_home_status'):
+            self.parent_window.update_home_status()
 
     def _on_display_mode_changed(self, index):
         self.pet_config['display_mode'] = DISPLAY_MODE_OPTIONS[index][0]
@@ -295,6 +297,8 @@ class GoPetPage(ScrollArea):
         self._sync_display_mode_ui()
         if hasattr(self.parent_window, 'go_pet_manager'):
             self.parent_window.go_pet_manager._update_config()
+        if hasattr(self.parent_window, 'update_home_status'):
+            self.parent_window.update_home_status()
 
     def _sync_display_mode_ui(self):
         display_mode = self.pet_config.get('display_mode', 'game')
@@ -302,7 +306,7 @@ class GoPetPage(ScrollArea):
         self.edit_mode_card.setDisabled(is_capture_mode)
         self.edit_switch.setChecked(False if is_capture_mode else self.edit_switch.isChecked())
         self.edit_switch.setEnabled(not is_capture_mode)
-            
+
     def _on_edit_mode_changed(self, is_checked):
         if hasattr(self.parent_window, 'go_pet_manager'):
             self.parent_window.go_pet_manager.overlay.set_edit_mode(is_checked)
@@ -336,7 +340,7 @@ class GoPetPage(ScrollArea):
         for event_config in events:
             self.add_new_event_widget(event_config)
         self._update_empty_state()
-            
+
     def add_new_event_widget(self, config):
         widget = PetEventConfigWidget(config, self.delete_event_widget)
         self.event_widgets.append(widget)
@@ -369,15 +373,15 @@ class GoPetPage(ScrollArea):
         self.event_cards_layout.removeWidget(widget)
         self.event_cards_layout.insertWidget(target_index, widget)
         self.save_events()
-        
+
     def save_events(self):
         events = [widget.get_config() for widget in self.event_widgets]
         self.pet_config['events'] = events
         self._save_config()
-        
+
         if hasattr(self.parent_window, 'go_pet_manager'):
             self.parent_window.go_pet_manager._update_config()
-            
+
         InfoBar.success("保存成功", "桌宠事件配置已保存", parent=self)
 
     def show_add_event_dialog(self):
@@ -429,28 +433,28 @@ class PetEventDialog(MessageBoxBase):
         super().__init__(parent)
         self.titleLabel = SubtitleLabel('添加桌宠事件', self)
         self.viewLayout.addWidget(self.titleLabel)
-        
+
         self.image_path = ""
         self.sound_path = ""
         self._setup_ui()
         self._on_event_type_changed(0)
-        
+
         self.widget.setMinimumWidth(560)
         self.yesButton.setText('确定')
         self.cancelButton.setText('取消')
-        
+
     def _setup_ui(self):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)
-        
+
         self.event_combo = ComboBox()
         self.event_types = PET_EVENT_OPTIONS
         self.event_combo.addItems([t[1] for t in self.event_types])
         self.event_combo.currentIndexChanged.connect(self._on_event_type_changed)
         layout.addWidget(BodyLabel("触发条件"))
         layout.addWidget(self.event_combo)
-        
+
         self.threshold_container = QWidget()
         self.threshold_layout = QHBoxLayout(self.threshold_container)
         self.threshold_layout.setContentsMargins(0, 0, 0, 0)
@@ -463,7 +467,7 @@ class PetEventDialog(MessageBoxBase):
         self.threshold_layout.addStretch()
         self.threshold_container.hide()
         layout.addWidget(self.threshold_container)
-        
+
         self.image_mode_combo = ComboBox()
         self.image_mode_combo.addItems(["单张图片", "文件夹随机"])
         layout.addWidget(BodyLabel("立绘来源"))
@@ -479,7 +483,7 @@ class PetEventDialog(MessageBoxBase):
         img_layout.addWidget(self.img_btn)
         layout.addWidget(BodyLabel("显示立绘"))
         layout.addLayout(img_layout)
-        
+
         self.sound_mode_combo = ComboBox()
         self.sound_mode_combo.addItems(["单个音频", "文件夹随机"])
         layout.addWidget(BodyLabel("音效来源"))
@@ -495,9 +499,9 @@ class PetEventDialog(MessageBoxBase):
         snd_layout.addWidget(self.snd_btn)
         layout.addWidget(BodyLabel("播放音效"))
         layout.addLayout(snd_layout)
-        
+
         self.viewLayout.addLayout(layout)
-        
+
     def _on_event_type_changed(self, index):
         event_type = self.event_types[index][0]
         if event_type == "low_health":
@@ -517,27 +521,27 @@ class PetEventDialog(MessageBoxBase):
             self.threshold_container.show()
         else:
             self.threshold_container.hide()
-            
+
     def _browse_image(self):
         if self.image_mode_combo.currentIndex() == 0:
             path, _ = QFileDialog.getOpenFileName(self, "选择立绘", "", "媒体 (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.mp4 *.webm *.avi *.mov *.mkv)")
         else:
             path = QFileDialog.getExistingDirectory(self, "选择立绘文件夹")
-            
+
         if path:
             self.image_path = path
             self.img_input.setText(os.path.basename(path))
-            
+
     def _browse_sound(self):
         if self.sound_mode_combo.currentIndex() == 0:
             path, _ = QFileDialog.getOpenFileName(self, "选择音效", "", "音频 (*.mp3 *.wav)")
         else:
             path = QFileDialog.getExistingDirectory(self, "选择音效文件夹")
-            
+
         if path:
             self.sound_path = path
             self.snd_input.setText(os.path.basename(path))
-            
+
     def get_config(self):
         idx = self.event_combo.currentIndex()
         event_type = self.event_types[idx][0]
@@ -575,34 +579,34 @@ class PetEventConfigWidget(SimpleCardWidget):
             image_path = config.get('image', '')
             sound_path = config.get('sound', '')
             threshold = config.get('threshold')
-            
+
             if threshold is not None:
                 type_name += f" ({threshold})"
         else:
             type_name = 'Unknown'
             image_path = ''
             sound_path = ''
-            
+
         title_label = BodyLabel(f"条件: {type_name}")
         title_label.setWordWrap(True)
         self.title_label = title_label
         info_layout.addWidget(self.title_label)
-        
+
         img_text = os.path.basename(image_path) if image_path else "无"
         snd_text = os.path.basename(sound_path) if sound_path else "无"
-        
+
         self.details_label = CaptionLabel(f"立绘: {img_text} | 音效: {snd_text}")
         self.details_label.setWordWrap(True)
         info_layout.addWidget(self.details_label)
-        
+
         layout.addLayout(info_layout)
         layout.addStretch()
-        
+
         del_btn = PushButton(FIF.DELETE, "删除")
         del_btn.clicked.connect(lambda: self.on_delete(self))
         layout.addWidget(del_btn)
         self.apply_theme_style()
-        
+
     def get_config(self):
         return self.config
 

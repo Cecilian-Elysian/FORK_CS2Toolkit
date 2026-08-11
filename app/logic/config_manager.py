@@ -4,6 +4,7 @@ import shutil
 import sys
 import zipfile
 import uuid
+import winreg
 
 IMPORT_SELECTION_DEFAULTS = {
     "bg": True,
@@ -20,19 +21,24 @@ class ConfigManager:
     # 统一的配置管理器。
     # - 管理CS2Toolkit工作目录。
     # - 将所有预设（视频、音效、字体）保存在一个 preconfig.json 文件中。
+
+    REG_PATH = r"Software\Moon4Quartz\CS2Toolkit"
+
     def __init__(self, directory_name="CS2Toolkit"):
         self.directory_name = directory_name
         self.work_dir = self._resolve_work_dir(directory_name)
         self.presets_file = os.path.join(self.work_dir, "preconfig.json")
         self.thumbnails_dir = os.path.join(self.work_dir, "thumbnails")
         self.configs_dir = os.path.join(self.work_dir, "configs")
-        
+
         self.config = {
             "video_presets": [],
             "sound_presets": [],
             "font_presets": [],
             "gsi_sound_presets": [],
             "gsi_events": [],
+            "gsi_port": 3000,
+            "gsi_enabled": True,
             "go_pet": {
                 "enabled": False,
                 "display_mode": "game",
@@ -44,19 +50,52 @@ class ConfigManager:
             "theme": "Auto",               # Auto, Light, Dark
             "close_behavior": "prompt",    # prompt, tray, exit
             "hide_close_prompt": False,
-            "auto_start": False
+            "auto_start": False,
+            "launch_use_vulkan": False
         }
 
         self._ensure_directories()
         self._migrate_legacy_work_dir()
         self.load_config()
 
+    def _get_custom_path_from_registry(self):
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.REG_PATH, 0, winreg.KEY_READ)
+            value, _ = winreg.QueryValueEx(key, "DataPath")
+            winreg.CloseKey(key)
+            if value and os.path.isabs(value):
+                return value
+        except OSError:
+            pass
+        return None
+
+    def _set_custom_path_to_registry(self, path):
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, self.REG_PATH)
+            winreg.SetValueEx(key, "DataPath", 0, winreg.REG_SZ, path)
+            winreg.CloseKey(key)
+            return True
+        except OSError as e:
+            print(f"写入注册表失败: {e}")
+            return False
+
     def _resolve_work_dir(self, directory_name):
-        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        parent_dir = os.path.dirname(exe_dir)
-        
-        # Check for path override file (e.g. if user moved the data directory)
-        for d in [exe_dir, parent_dir]:
+        # 1. 优先检查注册表中的重定向路径
+        reg_path = self._get_custom_path_from_registry()
+        if reg_path:
+            os.makedirs(reg_path, exist_ok=True)
+            return reg_path
+
+        # 2. 兼容旧版本的 txt 重定向文件
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+            parent_dir = os.path.dirname(exe_dir)
+            search_dirs = [exe_dir, parent_dir]
+        else:
+            exe_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+            search_dirs = [exe_dir]
+
+        for d in search_dirs:
             override_file = os.path.join(d, "cs2toolkit_data_path.txt")
             if os.path.isfile(override_file):
                 try:
@@ -65,11 +104,13 @@ class ConfigManager:
                         if custom_path and os.path.isabs(custom_path):
                             # Try to ensure the custom directory exists
                             os.makedirs(custom_path, exist_ok=True)
+                            # 顺手将其升级写入注册表
+                            self._set_custom_path_to_registry(custom_path)
                             return custom_path
                 except Exception as e:
                     print(f"无法读取或创建自定义数据路径: {e}")
 
-        # Default to LOCALAPPDATA
+        # 3. Default to LOCALAPPDATA
         local_appdata = os.environ.get("LOCALAPPDATA")
         if not local_appdata:
             local_appdata = os.path.join(os.path.expanduser("~"), "AppData", "Local")
@@ -79,16 +120,27 @@ class ConfigManager:
         """将当前数据迁移到新目录，并写入重定向文件"""
         if not new_dir or not os.path.isabs(new_dir):
             return False, "新路径必须是有效的绝对路径。"
-            
-        if os.path.abspath(new_dir) == os.path.abspath(self.work_dir):
+
+        target_dir = self._normalize_work_dir_target(new_dir)
+        current_dir = os.path.abspath(self.work_dir)
+
+        if target_dir == current_dir:
             return False, "新路径与当前路径相同。"
+
+        if self._is_subpath(target_dir, current_dir):
+            return False, "不能将数据目录迁移到当前数据目录的内部，否则会导致递归复制。"
+
+        if self._is_subpath(current_dir, target_dir):
+            return False, "不能将数据目录迁移到当前数据目录的上级包含目录中，请选择其他位置。"
+
+        self.save_config()
 
         # 1. 尝试复制所有文件到新目录
         try:
-            os.makedirs(new_dir, exist_ok=True)
+            os.makedirs(target_dir, exist_ok=True)
             for item in os.listdir(self.work_dir):
                 src_path = os.path.join(self.work_dir, item)
-                dst_path = os.path.join(new_dir, item)
+                dst_path = os.path.join(target_dir, item)
                 if os.path.isdir(src_path):
                     shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
                 else:
@@ -96,22 +148,31 @@ class ConfigManager:
         except OSError as e:
             return False, f"复制数据到新目录失败，可能是空间不足或权限受限: {e}"
 
-        # 2. 写入重定向文件
-        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-        if os.path.basename(exe_dir).lower() == "runtime":
-            write_dir = os.path.dirname(exe_dir)
-        else:
-            write_dir = exe_dir
-            
-        override_file = os.path.join(write_dir, "cs2toolkit_data_path.txt")
-        try:
-            with open(override_file, 'w', encoding='utf-8') as f:
-                f.write(os.path.abspath(new_dir))
-        except OSError as e:
-            return False, f"无法写入路径配置文件: {e}"
+        # 2. 写入重定向记录到注册表
+        if not self._set_custom_path_to_registry(target_dir):
+            return False, "无法写入路径配置到注册表，迁移中止。"
 
-        # 3. 迁移成功（不自动删除旧目录，以防万一，用户可手动删除）
-        return True, "数据目录迁移成功！为了确保所有组件正常工作，请重新启动本软件。"
+        # 3. 迁移成功，自动删除旧目录
+        try:
+            shutil.rmtree(self.work_dir)
+        except OSError as e:
+            print(f"警告：无法完全删除旧数据目录 {self.work_dir}: {e}")
+
+        return True, f"数据目录迁移成功！新目录：{target_dir}\n旧目录已自动清理。为了确保所有组件正常工作，请重新启动本软件。"
+
+    def _normalize_work_dir_target(self, selected_dir):
+        selected_dir = os.path.abspath(selected_dir)
+        if os.path.basename(selected_dir).lower() == self.directory_name.lower():
+            return selected_dir
+        return os.path.join(selected_dir, self.directory_name)
+
+    def _is_subpath(self, child_path, parent_path):
+        child_path = os.path.normcase(os.path.abspath(child_path))
+        parent_path = os.path.normcase(os.path.abspath(parent_path))
+        try:
+            return os.path.commonpath([child_path, parent_path]) == parent_path and child_path != parent_path
+        except ValueError:
+            return False
 
     def _candidate_legacy_work_dirs(self):
         seen = set()
@@ -129,8 +190,16 @@ class ConfigManager:
             if os.path.isdir(normalized):
                 candidates.append(normalized)
 
+        # 把本地 AppData 里的旧目录加进候选，防止用户升级新版本时丢配置
+        local_appdata = os.environ.get("LOCALAPPDATA")
+        if local_appdata:
+            add_candidate(os.path.join(local_appdata, self.directory_name))
+
         cwd = os.path.abspath(os.getcwd())
-        exe_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        if getattr(sys, 'frozen', False):
+            exe_dir = os.path.dirname(sys.executable)
+        else:
+            exe_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
         add_candidate(os.path.join(cwd, self.directory_name))
         add_candidate(os.path.join(exe_dir, self.directory_name))
@@ -266,6 +335,8 @@ class ConfigManager:
             "font_presets": [],
             "gsi_sound_presets": [],
             "gsi_events": [],
+            "gsi_port": 3000,
+            "gsi_enabled": True,
             "go_pet": {
                 "enabled": False,
                 "display_mode": "game",
@@ -274,13 +345,14 @@ class ConfigManager:
                 "offset_y": 50,
                 "events": []
             },
-            "theme": "Auto",               
-            "close_behavior": "prompt",    
+            "theme": "Auto",
+            "close_behavior": "prompt",
             "hide_close_prompt": False,
-            "auto_start": False
+            "auto_start": False,
+            "launch_use_vulkan": False
         }
         self.save_config()
-        
+
         # 清理缩略图
         if os.path.exists(self.thumbnails_dir):
             for file in os.listdir(self.thumbnails_dir):
@@ -331,28 +403,32 @@ class ConfigManager:
         sections["font"] = any(
             key in imported_config for key in ["font_presets", "current_font", "current_font_path"]
         )
-        sections["visual"] = "visual" in imported_config
-        sections["gsi"] = "gsi_events" in imported_config
+        sections["visual"] = any(
+            key in imported_config for key in ["visual", "launch_use_vulkan"]
+        )
+        sections["gsi"] = any(
+            key in imported_config for key in ["gsi_events", "gsi_enabled"]
+        )
         sections["go_pet"] = "go_pet" in imported_config
         return sections
 
     def export_config(self, export_zip_path, name, description="", selections=None):
         import copy
         if selections is None:
-            selections = {"bg": True, "video": True, "sound": True, "font": True, "visual": True, "gsi": True, "go_pet": True}
-            
+            selections = {"bg": True, "theme": True, "video": True, "sound": True, "font": True, "visual": True, "gsi": True, "go_pet": True}
+
         export_data = copy.deepcopy(self.config)
         included_resources = []
-        
+
         try:
             with zipfile.ZipFile(export_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 file_map = {} # path -> relative_name
-                
+
                 # 剔除纯本地偏好设置（保留 theme，剔除 auto_start 和 close_behavior 等）
                 local_keys = ['auto_start', 'close_behavior', 'hide_close_prompt', 'steam_path', 'gsi_port', 'gsi_sound_presets']
                 for key in local_keys:
                     export_data.pop(key, None)
-                
+
                 def _add_path(abs_path, category):
                     if not abs_path or not os.path.exists(abs_path):
                         return ""
@@ -378,7 +454,7 @@ class ConfigManager:
                     zipf.write(abs_path, rel_name)
                     file_map[abs_path] = rel_name
                     return rel_name
-                    
+
                 # 1. video_presets
                 if selections.get("video"):
                     included_resources.append("开屏动画预设及配置")
@@ -391,7 +467,7 @@ class ConfigManager:
                     export_data.pop("video_presets", None)
                     export_data.pop("current_video", None)
                     export_data.pop("current_video_path", None)
-                    
+
                 # 2. sound_presets
                 if selections.get("sound"):
                     included_resources.append("启动音效预设及配置")
@@ -403,7 +479,7 @@ class ConfigManager:
                     export_data.pop("sound_presets", None)
                     export_data.pop("current_sound", None)
                     export_data.pop("current_sound_path", None)
-                    
+
                 # 3. font_presets
                 if selections.get("font"):
                     included_resources.append("全局字体预设及配置")
@@ -415,7 +491,7 @@ class ConfigManager:
                     export_data.pop("font_presets", None)
                     export_data.pop("current_font", None)
                     export_data.pop("current_font_path", None)
-                    
+
                 # 4. gsi_events
                 if selections.get("gsi"):
                     included_resources.append("游戏内实时音效配置")
@@ -426,7 +502,8 @@ class ConfigManager:
                                 s["path"] = _add_path(s.get("path"), "gsi")
                 else:
                     export_data.pop("gsi_events", None)
-                            
+                    export_data.pop("gsi_enabled", None)
+
                 # 5. visual
                 if selections.get("visual"):
                     included_resources.append("游戏内视觉效果配置")
@@ -443,6 +520,7 @@ class ConfigManager:
                     export_data["visual"] = visual
                 else:
                     export_data.pop("visual", None)
+                    export_data.pop("launch_use_vulkan", None)
 
                 # 6. go_pet
                 if selections.get("go_pet"):
@@ -460,7 +538,7 @@ class ConfigManager:
                     export_data["go_pet"] = go_pet
                 else:
                     export_data.pop("go_pet", None)
-                
+
                 # 7. bg_path
                 if selections.get("bg"):
                     if export_data.get("bg_path"):
@@ -468,8 +546,14 @@ class ConfigManager:
                         export_data["bg_path"] = _add_path(export_data.get("bg_path"), "bg")
                 else:
                     export_data.pop("bg_path", None)
-                    
-                # 8. current selected items validation
+
+                # 8. theme
+                if selections.get("theme"):
+                    included_resources.append("应用主题")
+                else:
+                    export_data.pop("theme", None)
+
+                # 9. current selected items validation
                 current_video = export_data.get("current_video")
                 if current_video and not export_data.get("current_video_path"):
                     for p in export_data.get("video_presets", []):
@@ -487,7 +571,7 @@ class ConfigManager:
                             break
                     else:
                         export_data["current_sound"] = ""
-                        
+
                 current_font = export_data.get("current_font")
                 if current_font and not export_data.get("current_font_path"):
                     for p in export_data.get("font_presets", []):
@@ -496,10 +580,10 @@ class ConfigManager:
                             break
                     else:
                         export_data["current_font"] = ""
-                    
+
                 # write config.json
                 zipf.writestr("config.json", json.dumps(export_data, ensure_ascii=False, indent=4))
-                
+
                 # write meta.json
                 meta = {
                     "name": name,
@@ -508,7 +592,7 @@ class ConfigManager:
                 }
                 zipf.writestr("meta.json", json.dumps(meta, ensure_ascii=False, indent=4))
                 zipf.writestr(".cs2toolkit_profile", "CS2Toolkit Configuration Profile")
-                
+
             return True, "导出成功"
         except Exception as e:
             return False, f"导出失败: {str(e)}"
@@ -519,50 +603,50 @@ class ConfigManager:
         selected = dict(IMPORT_SELECTION_DEFAULTS)
         if selections:
             selected.update({key: bool(value) for key, value in selections.items()})
-        
+
         try:
             with zipfile.ZipFile(import_zip_path, 'r') as zipf:
                 zipf.extractall(extract_dir)
-                
+
             config_file = os.path.join(extract_dir, "config.json")
             if not os.path.exists(config_file):
                 return False, "压缩包内没有 config.json，格式不正确。"
-                
+
             with open(config_file, 'r', encoding='utf-8') as f:
                 imported_config = json.load(f)
-                
+
             def _resolve_path(rel_path):
                 if not rel_path: return ""
                 rel_path = rel_path.replace("/", os.sep)
                 abs_path = os.path.join(extract_dir, rel_path)
                 return abs_path if os.path.exists(abs_path) else ""
-                
+
             # 1. video_presets
             for p in imported_config.get("video_presets", []):
                 p["video_path"] = _resolve_path(p.get("video_path"))
                 p["thumbnail_path"] = _resolve_path(p.get("thumbnail_path"))
             if imported_config.get("current_video_path"):
                 imported_config["current_video_path"] = _resolve_path(imported_config.get("current_video_path"))
-                
+
             # 2. sound_presets
             for p in imported_config.get("sound_presets", []):
                 p["sound_path"] = _resolve_path(p.get("sound_path"))
             if imported_config.get("current_sound_path"):
                 imported_config["current_sound_path"] = _resolve_path(imported_config.get("current_sound_path"))
-                
+
             # 3. font_presets
             for p in imported_config.get("font_presets", []):
                 p["font_path"] = _resolve_path(p.get("font_path"))
             if imported_config.get("current_font_path"):
                 imported_config["current_font_path"] = _resolve_path(imported_config.get("current_font_path"))
-                
+
             # 4. gsi_events
             for e in imported_config.get("gsi_events", []):
                 e["sound"] = _resolve_path(e.get("sound"))
                 if "sounds_1_5" in e:
                     for s in e["sounds_1_5"]:
                         s["path"] = _resolve_path(s.get("path"))
-                        
+
             # 5. visual
             visual = imported_config.get("visual", {})
             if "flash_path" in visual:
@@ -601,11 +685,11 @@ class ConfigManager:
                 imported_config["go_pet"] = normalized_go_pet
             else:
                 imported_config["go_pet"] = dict(go_pet_defaults)
-                
+
             # 7. bg_path
             if imported_config.get("bg_path"):
                 imported_config["bg_path"] = _resolve_path(imported_config.get("bg_path"))
-                
+
             # 过滤掉不应被覆盖的纯本地设置
             local_keys_to_protect = ['auto_start', 'close_behavior', 'hide_close_prompt', 'steam_path', 'gsi_port', 'gsi_sound_presets']
             for key in local_keys_to_protect:
@@ -617,8 +701,8 @@ class ConfigManager:
                 "video": ["video_presets", "current_video", "current_video_path"],
                 "sound": ["sound_presets", "current_sound", "current_sound_path"],
                 "font": ["font_presets", "current_font", "current_font_path"],
-                "visual": ["visual"],
-                "gsi": ["gsi_events"],
+                "visual": ["visual", "launch_use_vulkan"],
+                "gsi": ["gsi_events", "gsi_enabled"],
                 "go_pet": ["go_pet"],
             }
 
@@ -630,7 +714,7 @@ class ConfigManager:
             for key in keys_to_apply:
                 if key in imported_config:
                     self.config[key] = imported_config[key]
-                
+
             self.save_config()
             return True, "导入成功"
         except Exception as e:

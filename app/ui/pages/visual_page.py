@@ -1,5 +1,5 @@
 import os
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog, QColorDialog
 from PySide6.QtCore import Qt
 from qfluentwidgets import (ScrollArea, SettingCardGroup, SwitchSettingCard, SettingCard,
                            PushSettingCard, PushButton, FluentIcon as FIF, LineEdit, MessageBoxBase, SubtitleLabel, BodyLabel, SwitchButton, Slider)
@@ -7,12 +7,12 @@ from qfluentwidgets import (ScrollArea, SettingCardGroup, SwitchSettingCard, Set
 class VisualSettingCard(SettingCard):
     def __init__(self, icon, title, content=None, parent=None):
         super().__init__(icon, title, content, parent)
-        
+
         self.setting_btn = PushButton("设置", self)
         self.switch_btn = SwitchButton("关", self)
         self.switch_btn.setOnText("开")
         self.switch_btn.setOffText("关")
-        
+
         self.hBoxLayout.addWidget(self.setting_btn, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
         self.hBoxLayout.addWidget(self.switch_btn, 0, Qt.AlignmentFlag.AlignRight)
@@ -30,33 +30,33 @@ class VisualConfigDialog(MessageBoxBase):
         if self.dialog_type == 'flash':
             self.titleLabel = SubtitleLabel('自定义闪光图片', self)
             self.viewLayout.addWidget(self.titleLabel)
-            
+
             # File selection
             selection_layout = QHBoxLayout()
             selection_layout.addWidget(BodyLabel("图片路径:"))
-            
+
             path_val = self.visual_config.get('flash_path', '')
             self.path_label = BodyLabel(os.path.basename(path_val) if path_val else "未选择")
             self.path_label.setStyleSheet("color: #666666;")
             selection_layout.addWidget(self.path_label, 1)
-            
+
             self.select_btn = PushButton("选择图片", self)
             self.select_btn.clicked.connect(self._browse_flash_image)
             selection_layout.addWidget(self.select_btn)
-            
+
             self.select_dir_btn = PushButton("选择文件夹", self)
             self.select_dir_btn.clicked.connect(self._browse_flash_dir)
             selection_layout.addWidget(self.select_dir_btn)
-            
+
             self.viewLayout.addLayout(selection_layout)
-            
+
             # Scale mode selection
             scale_layout = QHBoxLayout()
             scale_layout.addWidget(BodyLabel("缩放模式:"))
             from qfluentwidgets import ComboBox
             self.scale_combo = ComboBox(self)
             self.scale_combo.addItems(["拉伸拉满 (忽略比例)", "保持比例拉满 (可能裁剪)", "保持比例完整 (可能显示不全)"])
-            
+
             scale_val = self.visual_config.get('flash_scale_mode', 'stretch')
             if scale_val == 'stretch':
                 idx = 0
@@ -69,30 +69,53 @@ class VisualConfigDialog(MessageBoxBase):
             scale_layout.addWidget(self.scale_combo, 1)
             self.viewLayout.addLayout(scale_layout)
 
+            reduce_layout = QHBoxLayout()
+            reduce_layout.addWidget(BodyLabel("闪光弹降噪:"))
+            self.flash_audio_switch = SwitchButton(self)
+            self.flash_audio_switch.setOnText("开")
+            self.flash_audio_switch.setOffText("关")
+            self.flash_audio_switch.setChecked(self.visual_config.get('flash_reduce_volume_enabled', False))
+            self.flash_audio_switch.checkedChanged.connect(self._on_flash_audio_switch_changed)
+            reduce_layout.addStretch()
+            reduce_layout.addWidget(self.flash_audio_switch)
+            self.viewLayout.addLayout(reduce_layout)
+
+            reduce_slider_layout = QHBoxLayout()
+            reduce_slider_layout.addWidget(BodyLabel("闪后保留音量:"))
+            self.flash_audio_slider = Slider(Qt.Horizontal, self)
+            self.flash_audio_slider.setRange(0, 100)
+            self.flash_audio_slider.setValue(self.visual_config.get('flash_reduce_volume_percent', 25))
+            self.flash_audio_slider.valueChanged.connect(self._on_flash_audio_percent_changed)
+            self.flash_audio_value = BodyLabel(f"{self.flash_audio_slider.value()}%")
+            reduce_slider_layout.addWidget(self.flash_audio_slider, 1)
+            reduce_slider_layout.addWidget(self.flash_audio_value)
+            self.viewLayout.addLayout(reduce_slider_layout)
+
         elif self.dialog_type == 'death':
             self.titleLabel = SubtitleLabel('自定义死亡画面', self)
             self.viewLayout.addWidget(self.titleLabel)
-            
+            self.viewLayout.addWidget(BodyLabel("提示：PNG 图片支持透明/半透明显示。"))
+
             selection_layout = QHBoxLayout()
             selection_layout.addWidget(BodyLabel("媒体路径:"))
-            
+
             path_val = self.visual_config.get('death_media_path', '')
             self.path_label = BodyLabel(os.path.basename(path_val) if path_val else "未选择")
             self.path_label.setStyleSheet("color: #666666;")
             selection_layout.addWidget(self.path_label, 1)
-            
+
             self.select_btn = PushButton("选择文件", self)
             self.select_btn.clicked.connect(self._browse_death_media)
             selection_layout.addWidget(self.select_btn)
             self.viewLayout.addLayout(selection_layout)
-            
+
             # Scale mode selection
             scale_layout = QHBoxLayout()
             scale_layout.addWidget(BodyLabel("图片缩放模式:"))
             from qfluentwidgets import ComboBox
             self.death_scale_combo = ComboBox(self)
             self.death_scale_combo.addItems(["拉伸拉满 (忽略比例)", "保持比例拉满 (可能裁剪)", "保持比例完整 (可能显示不全)"])
-            
+
             scale_val = self.visual_config.get('death_scale_mode', 'stretch')
             if scale_val == 'stretch':
                 idx = 0
@@ -106,32 +129,46 @@ class VisualConfigDialog(MessageBoxBase):
             self.viewLayout.addLayout(scale_layout)
 
         elif self.dialog_type == 'boss_key':
-            self.titleLabel = SubtitleLabel('一键切屏高级设置', self)
+            self.titleLabel = SubtitleLabel('死后自动打开内容', self)
             self.viewLayout.addWidget(self.titleLabel)
-            
-            url_layout = QHBoxLayout()
-            url_layout.addWidget(BodyLabel("打开网页:"))
-            self.url_input = LineEdit(self)
-            self.url_input.setText(self.visual_config.get('boss_key_url', 'https://www.douyin.com/?recommend=1&from_nav=1'))
-            self.url_input.textChanged.connect(self._on_url_changed)
-            url_layout.addWidget(self.url_input, 1)
-            self.viewLayout.addLayout(url_layout)
-            
+
+            type_layout = QHBoxLayout()
+            type_layout.addWidget(BodyLabel("打开类型:"))
+            from qfluentwidgets import SpinBox, ComboBox
+            self.target_type_combo = ComboBox(self)
+            self.target_type_combo.addItems(["网页", "本地程序"])
+            current_target_type = self.visual_config.get('boss_key_target_type', 'url')
+            self.target_type_combo.setCurrentIndex(1 if current_target_type == 'app' else 0)
+            self.target_type_combo.currentIndexChanged.connect(self._on_target_type_changed)
+            type_layout.addWidget(self.target_type_combo, 1)
+            self.viewLayout.addLayout(type_layout)
+
+            target_layout = QHBoxLayout()
+            target_layout.addWidget(BodyLabel("目标内容:"))
+            self.target_input = LineEdit(self)
+            default_target = self.visual_config.get('boss_key_target', self.visual_config.get('boss_key_url', 'https://www.douyin.com/?recommend=1&from_nav=1'))
+            self.target_input.setText(default_target)
+            self.target_input.textChanged.connect(self._on_target_changed)
+            target_layout.addWidget(self.target_input, 1)
+            self.target_browse_btn = PushButton("选择程序", self)
+            self.target_browse_btn.clicked.connect(self._browse_boss_key_target)
+            target_layout.addWidget(self.target_browse_btn)
+            self.viewLayout.addLayout(target_layout)
+
             delay_layout = QHBoxLayout()
             delay_layout.addWidget(BodyLabel("延迟打开(秒):"))
-            from qfluentwidgets import SpinBox, ComboBox
             self.delay_spin = SpinBox(self)
             self.delay_spin.setRange(0, 60)
             self.delay_spin.setValue(self.visual_config.get('boss_key_delay', 0))
             self.delay_spin.valueChanged.connect(self._on_delay_changed)
             delay_layout.addWidget(self.delay_spin, 1)
             self.viewLayout.addLayout(delay_layout)
-            
+
             action_layout = QHBoxLayout()
             action_layout.addWidget(BodyLabel("新回合动作:"))
             self.action_combo = ComboBox(self)
             self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)", "暂停/播放(推荐视频网站,使用时关闭音乐软件)"])
-            
+
             action_val = self.visual_config.get('boss_key_action', 'none')
             if action_val == 'none':
                 idx = 0
@@ -143,6 +180,7 @@ class VisualConfigDialog(MessageBoxBase):
             self.action_combo.currentIndexChanged.connect(self._on_action_changed)
             action_layout.addWidget(self.action_combo, 1)
             self.viewLayout.addLayout(action_layout)
+            self._update_boss_key_target_ui()
 
         self.widget.setMinimumWidth(400)
 
@@ -166,8 +204,9 @@ class VisualConfigDialog(MessageBoxBase):
             self.visual_config['death_media_path'] = path
             self.path_label.setText(os.path.basename(path))
             self.config_manager.set('visual', self.visual_config)
-            
-    def _on_url_changed(self, text):
+
+    def _on_target_changed(self, text):
+        self.visual_config['boss_key_target'] = text
         self.visual_config['boss_key_url'] = text
         self.config_manager.set('visual', self.visual_config)
 
@@ -183,6 +222,47 @@ class VisualConfigDialog(MessageBoxBase):
         else:
             val = 'pause'
         self.visual_config['boss_key_action'] = val
+        self.config_manager.set('visual', self.visual_config)
+
+    def _on_target_type_changed(self, index):
+        self.visual_config['boss_key_target_type'] = 'app' if index == 1 else 'url'
+        self.config_manager.set('visual', self.visual_config)
+        self._update_boss_key_target_ui()
+
+    def _browse_boss_key_target(self):
+        path, _ = QFileDialog.getOpenFileName(self, "选择本地程序", "", "程序或快捷方式 (*.exe *.lnk *.bat *.cmd)")
+        if path:
+            self.target_input.setText(path)
+
+    def _update_boss_key_target_ui(self):
+        is_app = self.visual_config.get('boss_key_target_type', 'url') == 'app'
+        self.target_browse_btn.setVisible(is_app)
+
+        self.action_combo.blockSignals(True)
+        self.action_combo.clear()
+        if is_app:
+            self.action_combo.addItems(["无操作 (仅切回游戏)", "强制关闭目标程序进程", "暂停/播放媒体 (如系统音乐/视频)"])
+        else:
+            self.action_combo.addItems(["无操作 (仅切回游戏)", "关闭浏览器进程 (强制关闭浏览器)", "暂停/播放(推荐视频网站,使用时关闭音乐软件)"])
+
+        action_val = self.visual_config.get('boss_key_action', 'none')
+        if action_val == 'none':
+            idx = 0
+        elif action_val == 'close':
+            idx = 1
+        else:
+            idx = 2
+        self.action_combo.setCurrentIndex(idx)
+        self.action_combo.blockSignals(False)
+        self.action_combo.setEnabled(True)
+
+    def _on_flash_audio_switch_changed(self, checked):
+        self.visual_config['flash_reduce_volume_enabled'] = checked
+        self.config_manager.set('visual', self.visual_config)
+
+    def _on_flash_audio_percent_changed(self, value):
+        self.flash_audio_value.setText(f"{value}%")
+        self.visual_config['flash_reduce_volume_percent'] = value
         self.config_manager.set('visual', self.visual_config)
 
     def _on_flash_scale_changed(self, index):
@@ -217,24 +297,24 @@ class KillIconDialog(MessageBoxBase):
         self.viewLayout.addWidget(self.titleLabel)
 
         self.is_advanced = self.visual_config.get('kill_icon_is_advanced', False)
-        
+
         # 基础设置
         self.basic_container = QWidget()
         basic_layout = QVBoxLayout(self.basic_container)
         basic_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         selection_layout = QHBoxLayout()
         selection_layout.addWidget(BodyLabel("全局图标路径:"))
         path_val = self.visual_config.get('kill_icon_path', '')
         self.path_label = BodyLabel(os.path.basename(path_val) if path_val else "未选择")
         self.path_label.setStyleSheet("color: #666666;")
         selection_layout.addWidget(self.path_label, 1)
-        
+
         self.select_btn = PushButton("选择图片", self)
         self.select_btn.clicked.connect(self._browse_basic_image)
         selection_layout.addWidget(self.select_btn)
         basic_layout.addLayout(selection_layout)
-        
+
         # 高级设置开关
         adv_switch_layout = QHBoxLayout()
         adv_switch_layout.addWidget(BodyLabel("启用 1-5 杀独立配置:"))
@@ -253,24 +333,24 @@ class KillIconDialog(MessageBoxBase):
         self.width_slider = Slider(Qt.Horizontal, self)
         self.width_slider.setRange(50, 500)
         self.width_slider.setValue(self.visual_config.get('kill_icon_width', 120))
-        
+
         self.width_value_label = BodyLabel(f"{self.width_slider.value()} px")
         self.width_slider.valueChanged.connect(self._on_width_changed)
-        
+
         width_layout.addWidget(self.width_slider, 1)
         width_layout.addWidget(self.width_value_label)
         basic_layout.addLayout(width_layout)
-        
+
         # 图标高度设置
         height_layout = QHBoxLayout()
         height_layout.addWidget(BodyLabel("图标高度:"))
         self.height_slider = Slider(Qt.Horizontal, self)
         self.height_slider.setRange(50, 500)
         self.height_slider.setValue(self.visual_config.get('kill_icon_height', 120))
-        
+
         self.height_value_label = BodyLabel(f"{self.height_slider.value()} px")
         self.height_slider.valueChanged.connect(self._on_height_changed)
-        
+
         height_layout.addWidget(self.height_slider, 1)
         height_layout.addWidget(self.height_value_label)
         basic_layout.addLayout(height_layout)
@@ -281,10 +361,10 @@ class KillIconDialog(MessageBoxBase):
         self.bottom_slider = Slider(Qt.Horizontal, self)
         self.bottom_slider.setRange(0, 500)
         self.bottom_slider.setValue(self.visual_config.get('kill_icon_bottom', 100))
-        
+
         self.bottom_value_label = BodyLabel(f"{self.bottom_slider.value()} px")
         self.bottom_slider.valueChanged.connect(self._on_bottom_changed)
-        
+
         bottom_layout.addWidget(self.bottom_slider, 1)
         bottom_layout.addWidget(self.bottom_value_label)
         basic_layout.addLayout(bottom_layout)
@@ -295,10 +375,10 @@ class KillIconDialog(MessageBoxBase):
         self.adv_container = QWidget()
         adv_layout = QVBoxLayout(self.adv_container)
         adv_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         self.adv_labels = []
         icons_config = self.visual_config.get('kill_icons_1_5', [{} for _ in range(5)])
-        
+
         for i in range(5):
             h_layout = QHBoxLayout()
             h_layout.addWidget(BodyLabel(f"{i+1} 杀图标:"))
@@ -307,14 +387,14 @@ class KillIconDialog(MessageBoxBase):
             label.setStyleSheet("color: #666666;")
             self.adv_labels.append(label)
             h_layout.addWidget(label, 1)
-            
+
             btn = PushButton("选择图片", self)
             btn.clicked.connect(lambda checked=False, idx=i: self._browse_adv_image(idx))
             h_layout.addWidget(btn)
             adv_layout.addLayout(h_layout)
 
         self.viewLayout.addWidget(self.adv_container)
-        
+
         self._update_visibility()
         self.widget.setMinimumWidth(450)
 
@@ -367,31 +447,36 @@ class VisualPage(ScrollArea):
         super().__init__(parent=parent)
         self.config_manager = config_manager
         self.parent_window = parent
-        
+
         self.view = QWidget(self)
         self.view.setObjectName("view")
         self.layout = QVBoxLayout(self.view)
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(15)
         self.layout.setAlignment(Qt.AlignTop)
-        
+
         self.setWidget(self.view)
         self.setWidgetResizable(True)
         self.setObjectName("visualPage")
         self.setStyleSheet("QScrollArea {background: transparent; border: none;} #view {background: transparent;}")
-        
+
         self._init_config()
         self._setup_ui()
-        
+
     def _init_config(self):
         self.visual_config = self.config_manager.get('visual', {
+            'visual_master_enabled': True,
             'flash_enabled': False,
             'flash_path': '',
             'flash_scale_mode': 'stretch',
+            'flash_reduce_volume_enabled': False,
+            'flash_reduce_volume_percent': 25,
             'death_media_enabled': False,
             'death_media_path': '',
             'death_scale_mode': 'stretch',
             'boss_key_enabled': False,
+            'boss_key_target_type': 'url',
+            'boss_key_target': 'https://www.douyin.com/?recommend=1&from_nav=1',
             'boss_key_url': 'https://www.douyin.com/?recommend=1&from_nav=1',
             'boss_key_delay': 0,
             'boss_key_action': 'none',
@@ -409,25 +494,29 @@ class VisualPage(ScrollArea):
         self.flash_card.switch_btn.blockSignals(True)
         self.flash_card.switch_btn.setChecked(self.visual_config.get('flash_enabled', False))
         self.flash_card.switch_btn.blockSignals(False)
-        
+
         self.kill_icon_card.switch_btn.blockSignals(True)
         self.kill_icon_card.switch_btn.setChecked(self.visual_config.get('kill_icon_enabled', False))
         self.kill_icon_card.switch_btn.blockSignals(False)
-        
+
         self.death_card.switch_btn.blockSignals(True)
         self.death_card.switch_btn.setChecked(self.visual_config.get('death_media_enabled', False))
         self.death_card.switch_btn.blockSignals(False)
-        
+
         self.boss_key_card.switch_btn.blockSignals(True)
         self.boss_key_card.switch_btn.setChecked(self.visual_config.get('boss_key_enabled', False))
         self.boss_key_card.switch_btn.blockSignals(False)
-        
+
+        self.fullscreen_support_card.switchButton.blockSignals(True)
+        self.fullscreen_support_card.switchButton.setChecked(self.config_manager.get('launch_use_vulkan', False))
+        self.fullscreen_support_card.switchButton.blockSignals(False)
+
     def _save_config(self):
         self.config_manager.set('visual', self.visual_config)
-        
+
     def _setup_ui(self):
         self.practical_group = SettingCardGroup("实用功能", self.view)
-        
+
         # 1. 闪光弹设置
         self.flash_card = VisualSettingCard(
             icon=FIF.PHOTO,
@@ -439,7 +528,17 @@ class VisualPage(ScrollArea):
         self.flash_card.switch_btn.checkedChanged.connect(self._on_flash_switch_changed)
         self.flash_card.setting_btn.clicked.connect(lambda: self._open_settings('flash'))
         self.practical_group.addSettingCard(self.flash_card)
-        
+
+        self.fullscreen_support_card = SwitchSettingCard(
+            icon=FIF.GAME,
+            title="全屏支持（Vulkan）",
+            content="通过本工具启动 CS2 时自动附加 -vulkan，提升全屏模式下视觉覆盖兼容性",
+            parent=self.practical_group
+        )
+        self.fullscreen_support_card.switchButton.setChecked(self.config_manager.get('launch_use_vulkan', False))
+        self.fullscreen_support_card.switchButton.checkedChanged.connect(self._on_fullscreen_support_changed)
+        self.practical_group.addSettingCard(self.fullscreen_support_card)
+
         # 2. 击杀图标设置
         self.kill_icon_card = VisualSettingCard(
             icon=FIF.GAME,
@@ -451,11 +550,11 @@ class VisualPage(ScrollArea):
         self.kill_icon_card.switch_btn.checkedChanged.connect(self._on_kill_icon_switch_changed)
         self.kill_icon_card.setting_btn.clicked.connect(lambda: self._open_settings('kill_icon'))
         self.practical_group.addSettingCard(self.kill_icon_card)
-        
+
         self.layout.addWidget(self.practical_group)
 
         self.entertainment_group = SettingCardGroup("娱乐功能", self.view)
-        
+
         # 3. 死亡画面设置
         self.death_card = VisualSettingCard(
             icon=FIF.VIDEO,
@@ -467,7 +566,7 @@ class VisualPage(ScrollArea):
         self.death_card.switch_btn.checkedChanged.connect(self._on_death_switch_changed)
         self.death_card.setting_btn.clicked.connect(lambda: self._open_settings('death'))
         self.entertainment_group.addSettingCard(self.death_card)
-        
+
         # 4. 死亡一键切屏 (老板键)
         self.boss_key_card = VisualSettingCard(
             icon=FIF.HIDE,
@@ -488,35 +587,30 @@ class VisualPage(ScrollArea):
         else:
             dialog = VisualConfigDialog(self.config_manager, type, self)
         dialog.exec()
-        
+
     def _on_flash_switch_changed(self, is_checked):
         self.visual_config['flash_enabled'] = is_checked
         self._save_config()
-        if hasattr(self.parent_window, 'home_tab'):
-            self.parent_window.home_tab.flash_switch_card.switchButton.blockSignals(True)
-            self.parent_window.home_tab.flash_switch_card.switchButton.setChecked(is_checked)
-            self.parent_window.home_tab.flash_switch_card.switchButton.blockSignals(False)
-            
+        if hasattr(self.parent_window, 'update_home_status'):
+            self.parent_window.update_home_status()
+
     def _on_kill_icon_switch_changed(self, is_checked):
         self.visual_config['kill_icon_enabled'] = is_checked
         self._save_config()
-        if hasattr(self.parent_window, 'home_tab'):
-            self.parent_window.home_tab.kill_icon_switch_card.switchButton.blockSignals(True)
-            self.parent_window.home_tab.kill_icon_switch_card.switchButton.setChecked(is_checked)
-            self.parent_window.home_tab.kill_icon_switch_card.switchButton.blockSignals(False)
-            
+        if hasattr(self.parent_window, 'update_home_status'):
+            self.parent_window.update_home_status()
+
     def _on_death_switch_changed(self, is_checked):
         self.visual_config['death_media_enabled'] = is_checked
         self._save_config()
-        if hasattr(self.parent_window, 'home_tab'):
-            self.parent_window.home_tab.death_switch_card.switchButton.blockSignals(True)
-            self.parent_window.home_tab.death_switch_card.switchButton.setChecked(is_checked)
-            self.parent_window.home_tab.death_switch_card.switchButton.blockSignals(False)
-            
+        if hasattr(self.parent_window, 'update_home_status'):
+            self.parent_window.update_home_status()
+
     def _on_boss_key_switch_changed(self, is_checked):
         self.visual_config['boss_key_enabled'] = is_checked
         self._save_config()
-        if hasattr(self.parent_window, 'home_tab'):
-            self.parent_window.home_tab.boss_key_switch_card.switchButton.blockSignals(True)
-            self.parent_window.home_tab.boss_key_switch_card.switchButton.setChecked(is_checked)
-            self.parent_window.home_tab.boss_key_switch_card.switchButton.blockSignals(False)
+        if hasattr(self.parent_window, 'update_home_status'):
+            self.parent_window.update_home_status()
+
+    def _on_fullscreen_support_changed(self, is_checked):
+        self.config_manager.set('launch_use_vulkan', is_checked)

@@ -25,31 +25,31 @@ class BackgroundSettingDialog(MessageBoxBase):
         super().__init__(parent)
         self.config_manager = config_manager
         self.parent_window = parent_window
-        
+
         self.titleLabel = SubtitleLabel('自定义背景设置', self)
-        
+
         # 将组件添加到布局中
         self.viewLayout.addWidget(self.titleLabel)
-        
+
         # 图片选择
         selection_layout = QHBoxLayout()
         selection_layout.addWidget(BodyLabel("图片路径:"))
         self.path_label = BodyLabel("未选择")
         self.path_label.setStyleSheet("color: #666666;")
-        
+
         bg_path = self.config_manager.get("bg_path", "")
         if bg_path:
             self.path_label.setText(os.path.basename(bg_path))
-            
+
         selection_layout.addWidget(self.path_label, 1)
         self.select_btn = PushButton("选择图片", self)
         self.select_btn.clicked.connect(self._on_select_bg)
         selection_layout.addWidget(self.select_btn)
-        
+
         self.clear_btn = PushButton("清除", self)
         self.clear_btn.clicked.connect(self._on_clear_bg)
         selection_layout.addWidget(self.clear_btn)
-        
+
         self.viewLayout.addLayout(selection_layout)
 
         # 缩放方式
@@ -72,7 +72,7 @@ class BackgroundSettingDialog(MessageBoxBase):
         self.bright_slider.valueChanged.connect(self._on_bg_bright_changed)
         bright_layout.addWidget(self.bright_slider)
         self.viewLayout.addLayout(bright_layout)
-        
+
         # 模糊
         blur_layout = QHBoxLayout()
         blur_layout.addWidget(BodyLabel("模糊:"))
@@ -82,7 +82,7 @@ class BackgroundSettingDialog(MessageBoxBase):
         self.blur_slider.valueChanged.connect(self._on_bg_blur_changed)
         blur_layout.addWidget(self.blur_slider)
         self.viewLayout.addLayout(blur_layout)
-        
+
         self.widget.setMinimumWidth(360)
 
     def _on_select_bg(self):
@@ -144,21 +144,22 @@ class ExportConfigDialog(MessageBoxBase):
         super().__init__(parent)
         self.titleLabel = SubtitleLabel('导出配置', self)
         self.viewLayout.addWidget(self.titleLabel)
-        
+
         self.name_input = LineEdit(self)
         self.name_input.setPlaceholderText("请输入配置名称 (必填)")
         self.name_input.textChanged.connect(self._validate)
         self.viewLayout.addWidget(self.name_input)
-        
+
         self.desc_input = LineEdit(self)
         self.desc_input.setPlaceholderText("请输入配置描述 (可选)")
         self.viewLayout.addWidget(self.desc_input)
-        
+
         self.viewLayout.addWidget(BodyLabel("请选择要导出的资源 (包括预设及当前正在使用的资源):"))
-        
+
         self.checkboxes = {}
         options = {
             "bg": "自定义软件背景",
+            "theme": "应用主题",
             "video": "开屏动画",
             "sound": "启动音效",
             "font": "全局字体",
@@ -166,19 +167,19 @@ class ExportConfigDialog(MessageBoxBase):
             "gsi": "游戏内实时音效配置",
             "go_pet": "GO桌宠配置与资源"
         }
-        
+
         for key, label in options.items():
             cb = CheckBox(label, self)
             cb.setChecked(True)
             self.viewLayout.addWidget(cb)
             self.checkboxes[key] = cb
-        
+
         self.widget.setMinimumWidth(350)
         self.yesButton.setDisabled(True)
-        
+
     def _validate(self, text):
         self.yesButton.setDisabled(not bool(text.strip()))
-        
+
     def get_data(self):
         selections = {k: cb.isChecked() for k, cb in self.checkboxes.items()}
         return self.name_input.text().strip(), self.desc_input.text().strip(), selections
@@ -189,11 +190,11 @@ class ImportConfirmDialog(MessageBoxBase):
         self.titleLabel = SubtitleLabel('确认导入配置', self)
         self.viewLayout.addWidget(self.titleLabel)
         self.checkboxes = {}
-        
+
         name = meta.get("name", "未知")
         desc = meta.get("description", "无描述信息")
         available_sections = available_sections or {}
-        
+
         self.viewLayout.addWidget(BodyLabel(f"配置名称: {name}"))
         self.viewLayout.addWidget(BodyLabel(f"配置描述: {desc}"))
 
@@ -206,11 +207,11 @@ class ImportConfirmDialog(MessageBoxBase):
             cb.stateChanged.connect(self._validate)
             self.viewLayout.addWidget(cb)
             self.checkboxes[key] = cb
-        
+
         warning = BodyLabel("导入将覆盖当前对应的设置，是否继续？")
         warning.setStyleSheet("color: #d40000; margin-top: 10px;")
         self.viewLayout.addWidget(warning)
-        
+
         self.widget.setMinimumWidth(350)
         self._validate()
 
@@ -227,7 +228,7 @@ class QuickSwitchConfigCard(SettingCard):
         self.comboBox.setMinimumWidth(150)
         self.apply_btn = PushButton("应用", self)
         self.open_folder_btn = PushButton("打开文件夹", self)
-        
+
         self.hBoxLayout.addWidget(self.comboBox, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(8)
         self.hBoxLayout.addWidget(self.apply_btn, 0, Qt.AlignmentFlag.AlignRight)
@@ -254,6 +255,7 @@ class DataStorageCard(SettingCard):
         self.hBoxLayout.addWidget(self.migrate_btn, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(16)
 
+
 class SettingPage(ScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -262,7 +264,7 @@ class SettingPage(ScrollArea):
 
         self.view = QWidget(self)
         self.expandLayout = ExpandLayout(self.view)
-        
+
         self.setObjectName("setting_page")
         self.view.setObjectName("setting_view")
         self.setWidget(self.view)
@@ -275,10 +277,10 @@ class SettingPage(ScrollArea):
     def _init_ui(self):
         # 1. 个性化设置组
         self.personalGroup = SettingCardGroup("个性化", self.view)
-        
+
         # 主题设置
         theme_val = self.config_manager.get("theme", "Auto")
-        
+
         self.themeCard = MyComboBoxSettingCard(
             icon=FIF.BRIGHTNESS,
             title="应用主题",
@@ -291,7 +293,7 @@ class SettingPage(ScrollArea):
         self.themeCard.comboBox.setCurrentIndex(idx_map.get(theme_val, 2))
         self.themeCard.comboBox.currentIndexChanged.connect(self._on_theme_changed)
         self.personalGroup.addSettingCard(self.themeCard)
-        
+
         # 背景设置
         self.bgCard = BackgroundSettingCard(
             icon=FIF.PHOTO,
@@ -301,13 +303,13 @@ class SettingPage(ScrollArea):
         )
         self.bgCard.config_btn.clicked.connect(self._show_bg_dialog)
         self.personalGroup.addSettingCard(self.bgCard)
-        
+
         # 2. 系统行为设置组
         self.systemGroup = SettingCardGroup("系统", self.view)
-        
+
         # 关闭行为
         close_val = self.config_manager.get("close_behavior", "prompt")
-        
+
         self.closeCard = MyComboBoxSettingCard(
             icon=FIF.CLOSE,
             title="关闭窗口行为",
@@ -319,7 +321,7 @@ class SettingPage(ScrollArea):
         self.closeCard.comboBox.setCurrentIndex(idx_close_map.get(close_val, 0))
         self.closeCard.comboBox.currentIndexChanged.connect(self._on_close_behavior_changed)
         self.systemGroup.addSettingCard(self.closeCard)
-        
+
         # 开机自启
         auto_start_val = self.config_manager.get("auto_start", False)
         self.autoStartCard = MySwitchSettingCard(
@@ -334,7 +336,7 @@ class SettingPage(ScrollArea):
 
         # 3. 配置管理组
         self.configGroup = SettingCardGroup("配置管理", self.view)
-        
+
         self.exportImportCard = ExportImportCard(
             icon=FIF.FOLDER,
             title="导入与导出",
@@ -357,7 +359,7 @@ class SettingPage(ScrollArea):
 
         # 4. 危险操作组
         self.dangerGroup = SettingCardGroup("高级与危险操作", self.view)
-        
+
         self.gsiControlCard = SettingCard(
             FIF.WIFI,
             "GSI 监听服务管理",
@@ -368,27 +370,27 @@ class SettingPage(ScrollArea):
         self.gsi_port_input.setPlaceholderText("端口(默认3000)")
         self.gsi_port_input.setFixedWidth(100)
         self.gsi_toggle_btn = PushButton("启动服务", self.gsiControlCard)
-        
+
         if hasattr(self.parent_window, 'gsi_manager'):
             mgr = self.parent_window.gsi_manager
             self.gsi_port_input.setText(str(mgr.current_port))
             if mgr.is_running():
                 self.gsi_toggle_btn.setText("停止服务")
                 self.gsi_port_input.setEnabled(False)
-            
+
         self.gsi_regen_btn = PushButton("重新生成GSI配置", self.gsiControlCard)
-        
+
         self.gsiControlCard.hBoxLayout.addWidget(self.gsi_port_input, 0, Qt.AlignmentFlag.AlignRight)
         self.gsiControlCard.hBoxLayout.addSpacing(8)
         self.gsiControlCard.hBoxLayout.addWidget(self.gsi_toggle_btn, 0, Qt.AlignmentFlag.AlignRight)
         self.gsiControlCard.hBoxLayout.addSpacing(8)
         self.gsiControlCard.hBoxLayout.addWidget(self.gsi_regen_btn, 0, Qt.AlignmentFlag.AlignRight)
         self.gsiControlCard.hBoxLayout.addSpacing(16)
-        
+
         self.gsi_toggle_btn.clicked.connect(self._on_gsi_toggle)
         self.gsi_regen_btn.clicked.connect(self._on_gsi_regen)
         self.dangerGroup.addSettingCard(self.gsiControlCard)
-        
+
         self.troubleshootCard = SettingCard(
             FIF.HELP,
             "自动疑难解答",
@@ -400,7 +402,7 @@ class SettingPage(ScrollArea):
         self.troubleshootCard.hBoxLayout.addWidget(self.troubleshoot_btn, 0, Qt.AlignmentFlag.AlignRight)
         self.troubleshootCard.hBoxLayout.addSpacing(16)
         self.dangerGroup.addSettingCard(self.troubleshootCard)
-        
+
         self.resetCard = SettingCard(
             FIF.DELETE,
             "重置所有设置",
@@ -416,7 +418,7 @@ class SettingPage(ScrollArea):
 
         # 5. 数据存储组
         self.storageGroup = SettingCardGroup("数据存储", self.view)
-        
+
         self.dataStorageCard = DataStorageCard(
             icon=FIF.FOLDER,
             title="数据保存目录",
@@ -432,7 +434,7 @@ class SettingPage(ScrollArea):
         self.expandLayout.addWidget(self.configGroup)
         self.expandLayout.addWidget(self.storageGroup)
         self.expandLayout.addWidget(self.dangerGroup)
-        
+
         self._load_quick_switch_configs()
 
     def _on_open_data_dir(self):
@@ -445,7 +447,7 @@ class SettingPage(ScrollArea):
         new_dir = QFileDialog.getExistingDirectory(self, "选择新的数据保存目录", self.config_manager.work_dir)
         if not new_dir:
             return
-            
+
         success, msg = self.config_manager.change_work_dir(new_dir)
         if success:
             self.dataStorageCard.setContent(new_dir)
@@ -472,41 +474,55 @@ class SettingPage(ScrollArea):
         if mgr.is_running():
             mgr.stop_server()
             self.gsi_toggle_btn.setText("启动服务")
+            self.gsi_toggle_btn.setEnabled(True)
             self.gsi_port_input.setEnabled(True)
             self.parent_window.show_info("GSI 服务已停止", "监听服务已手动关闭")
             self.parent_window.update_home_status()
         else:
             try:
                 new_port = int(self.gsi_port_input.text().strip())
-                mgr.current_port = new_port
             except ValueError:
                 self.parent_window.show_error("端口错误", "请输入有效的数字端口")
                 return
-            
-            mgr.start_server()
-            self.gsi_toggle_btn.setText("停止服务")
+
+            if not 1 <= new_port <= 65535:
+                self.parent_window.show_error("端口错误", "端口号必须在 1 到 65535 之间")
+                return
+
+            mgr.current_port = new_port
+            started = mgr.start_server()
+            if not started:
+                self.parent_window.show_warning("提示", "GSI 服务正在启动或已经在运行中，请稍后重试。")
+                return
+
+            self.gsi_toggle_btn.setText("启动中...")
+            self.gsi_toggle_btn.setEnabled(False)
             self.gsi_port_input.setEnabled(False)
-            self.parent_window.show_info("提示", "服务已尝试启动，请注意必须在重新生成CFG并重启游戏后，新端口才会生效。")
             self.parent_window.update_home_status()
 
     def _on_gsi_regen(self):
         if not hasattr(self.parent_window, 'gsi_manager'): return
         mgr = self.parent_window.gsi_manager
-        
+
         # 确保 steam_path 被传递到 mgr
         if hasattr(self.parent_window, 'steam_path') and self.parent_window.steam_path:
             mgr.set_cs2_path(self.parent_window.steam_path)
-            
+
         # 尝试使用输入的端口更新
         try:
             new_port = int(self.gsi_port_input.text().strip())
-            mgr.current_port = new_port
         except ValueError:
             self.parent_window.show_error("端口错误", "请输入有效的数字端口")
             return
-            
+
+        if not 1 <= new_port <= 65535:
+            self.parent_window.show_error("端口错误", "端口号必须在 1 到 65535 之间")
+            return
+
+        mgr.current_port = new_port
         success, msg = mgr.create_gsi_cfg()
         if success:
+            self.config_manager.set("gsi_port", new_port)
             self.parent_window.show_success("GSI配置已重新生成", f"{msg}\n请【重启游戏】以使配置生效。")
         else:
             self.parent_window.show_error("生成失败", msg)
@@ -514,7 +530,7 @@ class SettingPage(ScrollArea):
     def _on_troubleshoot(self):
         results = []
         all_passed = True
-        
+
         # 1. 检查游戏路径
         steam_path = getattr(self.parent_window, 'steam_path', None)
         if not steam_path or not os.path.exists(steam_path):
@@ -527,7 +543,7 @@ class SettingPage(ScrollArea):
                 all_passed = False
             else:
                 results.append("✅ 游戏路径: 正常。")
-                
+
         # 2. 检查GSI服务与端口
         mgr = getattr(self.parent_window, 'gsi_manager', None)
         if mgr:
@@ -552,7 +568,7 @@ class SettingPage(ScrollArea):
         else:
             results.append("❌ GSI服务: 未初始化。")
             all_passed = False
-            
+
         # 3. 检查 CFG 文件
         if steam_path and os.path.exists(steam_path):
             cfg_path = os.path.join(steam_path, "game", "csgo", "cfg", "gamestate_integration_cs2toolkit.cfg")
@@ -561,7 +577,7 @@ class SettingPage(ScrollArea):
             else:
                 results.append("❌ GSI配置: 缺失。请在“高级与危险操作”点击“重新生成GSI配置”。")
                 all_passed = False
-                
+
         # 总结
         summary = "\n\n".join(results)
         if all_passed:
@@ -573,30 +589,30 @@ class SettingPage(ScrollArea):
         dialog = MessageBoxBase(self.parent_window)
         dialog.titleLabel = SubtitleLabel("确认重置所有设置？", dialog)
         dialog.viewLayout.addWidget(dialog.titleLabel)
-        
+
         warning = BodyLabel("此操作将清除您在软件内保存的所有预设、事件、自定义图片，并尝试移除游戏中已替换的视频、音效和字体。此操作不可逆！\n\n注意：如果遇到游戏资源问题，请通过 Steam 验证游戏完整性。")
         warning.setWordWrap(True)
         dialog.viewLayout.addWidget(warning)
         dialog.widget.setMinimumWidth(380)
-        
+
         if dialog.exec():
             # 1. 恢复游戏资源
             steam_path = self.parent_window.steam_path
             if steam_path and os.path.exists(steam_path):
                 from ...logic.steam_utils import SteamUtils
                 steam_lib = SteamUtils.extract_steam_library_from_cs2_path(steam_path)
-                
+
                 # 恢复音效
                 from ...logic.sound_replacer import SoundReplacer
                 SoundReplacer(steam_path).restore_sound()
-                
+
                 if steam_lib:
                     # 恢复字体
                     from ...logic.font_replacer import FontReplacer
                     replacer = FontReplacer(steam_lib)
                     if hasattr(replacer, 'restore_font'):
                         replacer.restore_font()
-                        
+
                     # 恢复视频
                     from ...logic.video_replacer import VideoReplacer
                     v_replacer = VideoReplacer(steam_lib)
@@ -605,7 +621,7 @@ class SettingPage(ScrollArea):
 
             # 2. 恢复软件配置
             self.config_manager.reset_all()
-            
+
             # 3. 刷新 UI
             self.parent_window.show_success("重置成功", "所有设置已恢复为初始状态。")
             self.parent_window.load_all_presets()
@@ -616,7 +632,7 @@ class SettingPage(ScrollArea):
             if hasattr(self.parent_window, 'visual_tab'):
                 self.parent_window.visual_tab.config_manager = self.config_manager
                 self.parent_window.visual_tab._update_ui_from_config()
-                
+
             # 刷新主题
             self.themeCard.comboBox.blockSignals(True)
             self.themeCard.comboBox.setCurrentIndex(2) # Auto
@@ -627,7 +643,7 @@ class SettingPage(ScrollArea):
         val_map = {0: "Light", 1: "Dark", 2: "Auto"}
         theme_val = val_map.get(index, "Auto")
         self.config_manager.set("theme", theme_val)
-        
+
         if theme_val == "Light":
             setTheme(Theme.LIGHT)
             self.parent_window.is_dark_mode = False
@@ -680,7 +696,7 @@ class SettingPage(ScrollArea):
             if not self.config_manager.is_valid_config_zip(path):
                 self.parent_window.show_error("导入失败", "这不是有效的CS2Toolkit配置包。")
                 return
-                
+
             meta = self.config_manager.get_zip_meta(path)
             available_sections = self.config_manager.get_importable_sections(path)
             dialog = ImportConfirmDialog(meta, available_sections, self)
@@ -721,7 +737,7 @@ class SettingPage(ScrollArea):
         if success:
             self.parent_window.show_success("导入成功", "配置导入成功，界面即将刷新。")
             selections = selections or {}
-            
+
             # Apply imported current selections to game files
             if selections.get("video", True):
                 current_video = self.config_manager.get("current_video")
@@ -736,7 +752,7 @@ class SettingPage(ScrollArea):
                     if steam_lib:
                         replacer = VideoReplacer(steam_lib)
                         replacer.replace_video(video_path)
-                        
+
             current_sound = self.config_manager.get("current_sound") if selections.get("sound", True) else ""
             if current_sound:
                 sound_path = self.config_manager.get("current_sound_path")
@@ -744,7 +760,7 @@ class SettingPage(ScrollArea):
                     from ...logic.sound_replacer import SoundReplacer
                     replacer = SoundReplacer(self.parent_window.steam_path)
                     replacer.replace_sound(sound_path)
-                        
+
             current_font = self.config_manager.get("current_font") if selections.get("font", True) else ""
             if current_font:
                 font_path = self.config_manager.get("current_font_path")
@@ -755,7 +771,7 @@ class SettingPage(ScrollArea):
                     if steam_lib:
                         replacer = FontReplacer(steam_lib)
                         replacer.replace_font(font_path, lambda msg: None)
-            
+
             if selections.get("video", True) or selections.get("sound", True) or selections.get("font", True):
                 self.parent_window.load_all_presets()
             self.parent_window.update_home_status()
@@ -770,7 +786,7 @@ class SettingPage(ScrollArea):
                 self.parent_window.go_pet_tab.reload_from_config()
             if selections.get("go_pet", True) and hasattr(self.parent_window, 'go_pet_manager'):
                 self.parent_window.go_pet_manager._update_config()
-            
+
             # 刷新主题 (根据导入的配置)
             if selections.get("theme", True):
                 theme_val = self.config_manager.get("theme", "Auto")
@@ -779,7 +795,7 @@ class SettingPage(ScrollArea):
                 self.themeCard.comboBox.setCurrentIndex(idx_map.get(theme_val, 2))
                 self.themeCard.comboBox.blockSignals(False)
                 self._on_theme_changed(idx_map.get(theme_val, 2))
-            
+
         else:
             self.parent_window.show_error("导入失败", msg)
 
@@ -788,7 +804,7 @@ class SettingPage(ScrollArea):
         configs_dir = self.config_manager.configs_dir
         if not os.path.exists(configs_dir):
             return
-            
+
         for f in os.listdir(configs_dir):
             if f.endswith('.zip'):
                 zip_path = os.path.join(configs_dir, f)
@@ -819,11 +835,11 @@ class SettingPage(ScrollArea):
                     # 如果在开发环境，使用 main.py
                     main_py = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "main.py"))
                     exe_path = f'"{sys.executable}" "{main_py}"'
-                
+
                 # 如果只是字符串，加上引号防止路径包含空格
                 if not exe_path.startswith('"'):
                     exe_path = f'"{exe_path}"'
-                    
+
                 winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
             else:
                 try:

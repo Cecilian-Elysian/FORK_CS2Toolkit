@@ -1,7 +1,7 @@
 import os
 import json
 import threading
-from PySide6.QtWidgets import QApplication, QFileDialog, QListWidgetItem, QInputDialog
+from PySide6.QtWidgets import QApplication, QFileDialog, QListWidgetItem
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QImage, QIcon, QDesktopServices
 from PySide6.QtCore import QUrl
@@ -17,8 +17,10 @@ from app.logic.sound_replacer import SoundReplacer
 from app.logic.gsi_manager import GSIManager
 from app.logic.visual_handler import VisualHandler
 from app.logic.go_pet_manager import GoPetManager
+from app.logic.launch_manager import LaunchManager
 from app.release_endpoints import UPDATE_URL
 from app.ui.animations import AnimationManager
+from app.ui.fluent_dialogs import TextInputDialog
 from app.ui.pages.home_page import HomePage
 from app.ui.integrated_sound_page import IntegratedSoundPage
 from app.ui.components import VideoPresetWidget, FontPresetWidget, SoundPresetWidget
@@ -36,12 +38,12 @@ class UpdateSignalEmitter(QObject):
 class CS2Tool(FluentWindow):
     def __init__(self):
         super().__init__()
-        self.version = "1.4.0"
+        self.version = "1.5.0"
         self.repo_url = "https://github.com/clover-233/CS2Toolkit"
         self.is_dark_mode = False
         self._force_quit = False
         self.config_manager = ConfigManager()
-        
+
         # 1. 设定主题与品牌色
         setThemeColor(QColor("#0078D4")) # 品牌蓝色
         theme_val = self.config_manager.get("theme", "Auto")
@@ -53,15 +55,21 @@ class CS2Tool(FluentWindow):
             self.is_dark_mode = True
         else:
             setTheme(Theme.AUTO)
-            
+
         self.animation_manager = AnimationManager(self)
         self.gsi_manager = GSIManager(config_manager=self.config_manager)
         self.visual_handler = VisualHandler(self.config_manager)
         self.go_pet_manager = GoPetManager(self.config_manager)
-        self.steam_path = "" 
+        self.steam_path = ""
         self.video_path = ""
         self.font_path = ""
         self.sound_path = ""
+        self.last_game_state_overview = {
+            "phase": "等待 GSI",
+            "activity": "未连接",
+            "team": "--",
+            "health": "--",
+        }
 
         self.gsi_signal_emitter = GsiSignalEmitter()
         self.gsi_signal_emitter.data_received.connect(self.handle_gsi_data_on_ui_thread)
@@ -69,7 +77,7 @@ class CS2Tool(FluentWindow):
 
         self.update_signal_emitter = UpdateSignalEmitter()
         self.update_signal_emitter.update_found.connect(self.show_update_dialog)
-        
+
         self.bg_label = QLabel(self)
         self.bg_label.lower()
         self.bg_label.setAttribute(Qt.WA_TransparentForMouseEvents)
@@ -92,10 +100,10 @@ class CS2Tool(FluentWindow):
         if not bg_path or not os.path.exists(bg_path):
             self.bg_label.hide()
             return
-            
+
         self.bg_label.show()
         pixmap = QPixmap(bg_path)
-        
+
         # apply brightness
         bright = self.config_manager.get("bg_bright", 100) / 100.0
         if bright != 1.0:
@@ -116,15 +124,15 @@ class CS2Tool(FluentWindow):
         # 1: 填充 (IgnoreAspectRatio)
         # 2: 拉伸 (IgnoreAspectRatio)
         # 3: 居中 (KeepAspectRatio)
-        
+
         aspect_ratio_mode = Qt.KeepAspectRatioByExpanding
         if bg_scale == 1 or bg_scale == 2:
             aspect_ratio_mode = Qt.IgnoreAspectRatio
         elif bg_scale == 3:
             aspect_ratio_mode = Qt.KeepAspectRatio
-            
+
         scaled_pixmap = pixmap.scaled(self.size(), aspect_ratio_mode, Qt.SmoothTransformation)
-        
+
         # 对于居中模式，我们需要创建一个与窗口一样大且透明的 QPixmap，然后将图片画在中间
         if bg_scale == 3:
             final_pixmap = QPixmap(self.size())
@@ -137,13 +145,13 @@ class CS2Tool(FluentWindow):
             self.bg_label.setPixmap(final_pixmap)
         else:
             self.bg_label.setPixmap(scaled_pixmap)
-            
+
         self.bg_label.resize(self.size())
-        
+
         # apply blur
         blur_radius = self.config_manager.get("bg_blur", 0)
         self.bg_effect.setBlurRadius(blur_radius)
-        
+
         self.bg_label.lower()
 
     def resizeEvent(self, event):
@@ -156,11 +164,17 @@ class CS2Tool(FluentWindow):
 
         # 启动 GSI Server（路径和配置生成已转移到 _perform_steam_detection 和 browse_steam 中处理）
         self.gsi_manager.start_server()
-        
+        self._repair_current_font_if_needed(silent=True)
+
         # 更新设置页的按钮状态
         if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_toggle_btn'):
             if self.gsi_manager.is_running():
                 self.setting_tab.gsi_toggle_btn.setText("停止服务")
+                self.setting_tab.gsi_toggle_btn.setEnabled(True)
+                self.setting_tab.gsi_port_input.setEnabled(False)
+            elif self.gsi_manager.is_starting():
+                self.setting_tab.gsi_toggle_btn.setText("启动中...")
+                self.setting_tab.gsi_toggle_btn.setEnabled(False)
                 self.setting_tab.gsi_port_input.setEnabled(False)
 
     def init_window(self):
@@ -168,20 +182,20 @@ class CS2Tool(FluentWindow):
         self.setWindowIcon(QIcon(":/app_icon.ico"))
         self.resize(750, 780)
         self.center()
-        
+
         # 初始化系统托盘
         self.tray_icon = QSystemTrayIcon(QIcon(":/app_icon.ico"), self)
         self.tray_icon.setToolTip("CS2 工具箱")
         self.tray_menu = QMenu(self)
-        
+
         show_action = QAction("显示主窗口", self)
         show_action.triggered.connect(self.show_window)
         self.tray_menu.addAction(show_action)
-        
+
         quit_action = QAction("完全退出", self)
         quit_action.triggered.connect(self.quit_app)
         self.tray_menu.addAction(quit_action)
-        
+
         self.tray_icon.setContextMenu(self.tray_menu)
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
         self.tray_icon.show()
@@ -189,9 +203,10 @@ class CS2Tool(FluentWindow):
     def show_window(self):
         self.show()
         self.activateWindow()
-        
+
     def quit_app(self):
         self._force_quit = True
+        self.visual_handler.cleanup()
         QApplication.quit()
 
     def on_tray_icon_activated(self, reason):
@@ -201,6 +216,7 @@ class CS2Tool(FluentWindow):
     def init_ui(self):
         from app.ui.pages.customize_page import CustomizePage
         from app.ui.pages.about_page import AboutPage
+        from app.ui.pages.game_enhancement_page import GameEnhancementPage
         from app.ui.pages.setting_page import SettingPage
         from app.ui.pages.visual_page import VisualPage
         from app.ui.pages.go_pet_page import GoPetPage
@@ -221,7 +237,7 @@ class CS2Tool(FluentWindow):
 
         self.setting_tab = SettingPage(self)
         self.setting_tab.setObjectName("setting_tab")
-        
+
         self.visual_tab = VisualPage(self.config_manager, self)
         self.visual_tab.setObjectName("visual_tab")
 
@@ -230,16 +246,17 @@ class CS2Tool(FluentWindow):
 
         self.integrated_sound_page = IntegratedSoundPage(self.gsi_manager, self.config_manager, self)
         self.integrated_sound_page.setObjectName("integrated_sound_page")
-        
+
         self.gsi_tab = self.integrated_sound_page
-        self.gsi_page = self.integrated_sound_page  
-        self.gsi_sound_page = self.integrated_sound_page  
-        
+        self.gsi_page = self.integrated_sound_page
+        self.gsi_sound_page = self.integrated_sound_page
+        self.game_enhancement_tab = GameEnhancementPage(self.integrated_sound_page, self.visual_tab, self)
+        self.game_enhancement_tab.setObjectName("game_enhancement_tab")
+
         self.addSubInterface(self.home_tab, FIF.HOME, "主页", NavigationItemPosition.TOP)
-        self.addSubInterface(self.customize_tab, FIF.BRUSH, "个性化替换")
-        self.addSubInterface(self.integrated_sound_page, FIF.HEADPHONE, "游戏内音效设置")
-        self.addSubInterface(self.visual_tab, FIF.VIEW, "游戏内视觉设置")
-        self.addSubInterface(self.go_pet_tab, FIF.HEART, "GO桌宠")
+        self.addSubInterface(self.game_enhancement_tab, FIF.GAME, "游戏增强")
+        self.addSubInterface(self.go_pet_tab, FIF.HEART, "桌宠与互动")
+        self.addSubInterface(self.customize_tab, FIF.BRUSH, "个性化")
         self.addSubInterface(self.setting_tab, FIF.SETTING, "设置", NavigationItemPosition.BOTTOM)
         self.addSubInterface(self.about_tab, FIF.INFO, "关于", NavigationItemPosition.BOTTOM)
 
@@ -257,8 +274,8 @@ class CS2Tool(FluentWindow):
 
 
 
-        
-    
+
+
     def quick_detect_steam(self):
         """Detects CS2 path and updates UI."""
         self.auto_detect_steam()
@@ -370,9 +387,9 @@ class CS2Tool(FluentWindow):
         if not os.path.exists(preset["video_path"]):
             self.show_error("文件丢失", "预设的视频文件已不存在。")
             return
-        
+
         self.video_tab.video_entry.setText(preset["video_path"])
-        
+
         if self.show_confirm_dialog("确认应用", f"是否立即应用视频预设 '{preset['name']}'？"):
             self.execute_replace()
 
@@ -392,22 +409,24 @@ class CS2Tool(FluentWindow):
         if saved_steam_path and os.path.exists(saved_steam_path) and os.path.exists(os.path.join(saved_steam_path, "game", "bin", "win64", "cs2.exe")):
             self.steam_path = saved_steam_path
             self.update_home_status()
-            
+
             # 如果是优先从配置加载的，也要顺便给 GSI 生成一次配置，防止用户重装了游戏但路径没变
             self.gsi_manager.set_cs2_path(self.steam_path)
             self.gsi_manager.create_gsi_cfg()
+            self._repair_current_font_if_needed(silent=True)
             return
-            
+
         cs2_path = SteamUtils.find_cs2_install_path()
         if cs2_path and os.path.exists(cs2_path):
             self.steam_path = cs2_path
             self.config_manager.set("steam_path", cs2_path)
             self.update_home_status()
-            
+
             # 检测到新路径后自动生成配置
             self.gsi_manager.set_cs2_path(self.steam_path)
             self.gsi_manager.create_gsi_cfg()
-            
+            self._repair_current_font_if_needed(silent=True)
+
             self.update_recent_activity("自动检测CS2路径成功")
             InfoBar.success("成功", "已自动检测到CS2安装路径。", parent=self, duration=3000)
         else:
@@ -423,14 +442,38 @@ class CS2Tool(FluentWindow):
                 self.steam_path = path
                 self.config_manager.set("steam_path", path)
                 self.update_home_status()
-                
+
                 # 手动选择后也自动生成一次
                 self.gsi_manager.set_cs2_path(self.steam_path)
                 self.gsi_manager.create_gsi_cfg()
-                
+                self._repair_current_font_if_needed(silent=True)
+
                 self.update_recent_activity(f"手动设置CS2路径为: {path}")
             else:
                 self.show_error("路径无效", "所选目录不是有效的CS2安装目录。")
+
+    def launch_cs2(self):
+        cs2_path = self.steam_path
+        if not cs2_path or not os.path.exists(cs2_path):
+            self.show_error("路径缺失", "CS2 路径未设置或无效，请先在主页设置。")
+            return
+
+        if LaunchManager.is_cs2_running():
+            success, message = LaunchManager.close_cs2()
+            if success:
+                self.show_success("关闭成功", message)
+            else:
+                self.show_warning("关闭失败", message)
+            self.update_home_status()
+            return
+
+        use_vulkan = self.config_manager.get("launch_use_vulkan", False)
+        success, message = LaunchManager.launch_cs2(cs2_path, use_vulkan=use_vulkan)
+        if success:
+            self.show_success("启动成功", message)
+        else:
+            self.show_error("启动失败", message)
+        self.update_home_status()
 
     def execute_replace(self):
         cs2_path = self.steam_path
@@ -449,7 +492,7 @@ class CS2Tool(FluentWindow):
         version_type = "both"
         if self.video_tab.intl_radio.isChecked(): version_type = "intl"
         if self.video_tab.cn_radio.isChecked(): version_type = "cn"
-        
+
         try:
             steam_library_path = SteamUtils.extract_steam_library_from_cs2_path(cs2_path)
             if not steam_library_path:
@@ -466,7 +509,7 @@ class CS2Tool(FluentWindow):
                 self.show_error("替换失败", result['error'])
         except Exception as e:
             self.show_error("严重错误", str(e))
-    
+
     def handle_gsi_data_from_thread(self, data_bytes):
         """Receives data from GSI thread and emits a signal to the main thread."""
         try:
@@ -478,11 +521,11 @@ class CS2Tool(FluentWindow):
                     break
                 except UnicodeDecodeError:
                     continue
-            
+
             if data_str is None:
                 # 如果所有编码都失败，使用错误处理方式
                 data_str = data_bytes.decode('utf-8', errors='ignore')
-            
+
             game_state = json.loads(data_str)
             self.gsi_signal_emitter.data_received.emit(game_state)
         except (json.JSONDecodeError, Exception):
@@ -495,34 +538,42 @@ class CS2Tool(FluentWindow):
              if hasattr(self, 'home_tab'):
                  self.home_tab.status_gsi_server.setText(f"错误: {game_state.get('message', '无法启动服务器')}")
                  self.home_tab.status_gsi_server.setStyleSheet("color: red;")
+             if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_toggle_btn'):
+                 self.setting_tab.gsi_toggle_btn.setText("启动服务")
+                 self.setting_tab.gsi_toggle_btn.setEnabled(True)
+                 self.setting_tab.gsi_port_input.setEnabled(True)
              self.show_error("GSI服务启动失败", f"{game_state.get('message', '无法启动服务器')}\n请在设置页检查端口是否被占用，或尝试更改端口。")
              return
-             
+
         # 处理端口自动更换警告
         if "warning" in game_state and game_state["warning"] == "port_changed":
             old_port = game_state.get("old_port")
             new_port = game_state.get("new_port")
+            self.config_manager.set("gsi_port", new_port)
             self.show_warning("GSI端口被占用", f"原端口 {old_port} 被占用，已自动切换至 {new_port}。\n请前往【设置-高级】点击「重新生成GSI配置」并重启游戏，否则音效将失效！", duration=10000)
             if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_port_input'):
                 self.setting_tab.gsi_port_input.setText(str(new_port))
             return
-        
+
         # 处理服务器启动成功
         if "success" in game_state and game_state["success"] == "server_started":
             port = game_state.get("port", "未知")
             host = game_state.get("host", "127.0.0.1")
+            if isinstance(port, int):
+                self.config_manager.set("gsi_port", port)
             if hasattr(self, 'home_tab'):
                 self.home_tab.status_gsi_server.setText(f"服务运行中...")
                 self.home_tab.status_gsi_server.setStyleSheet("color: green;")
-            
+
             # 更新设置页的UI状态
             if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_toggle_btn'):
                 self.setting_tab.gsi_toggle_btn.setText("停止服务")
+                self.setting_tab.gsi_toggle_btn.setEnabled(True)
                 self.setting_tab.gsi_port_input.setEnabled(False)
-                
+
             self.show_success("GSI服务启动成功", f"服务已在 {host}:{port} 端口上开启")
             return
-        
+
         # 处理其他错误
         if "error" in game_state:
             error_type = game_state["error"]
@@ -530,14 +581,28 @@ class CS2Tool(FluentWindow):
                 if hasattr(self, 'home_tab'):
                     self.home_tab.status_gsi_server.setText("错误: 服务器发生意外错误")
                     self.home_tab.status_gsi_server.setStyleSheet("color: red;")
+                if hasattr(self, 'setting_tab') and hasattr(self.setting_tab, 'gsi_toggle_btn'):
+                    self.setting_tab.gsi_toggle_btn.setText("启动服务")
+                    self.setting_tab.gsi_toggle_btn.setEnabled(True)
+                    self.setting_tab.gsi_port_input.setEnabled(True)
                 self.show_error("GSI服务错误", game_state.get('message', '服务器发生意外错误'))
             return
-        
+
         # 处理正常的游戏状态数据
         if not any(key in game_state for key in ["error", "success"]):
+            player = game_state.get('player', {})
+            state = player.get('state', {})
+            round_info = game_state.get('round', {})
+            self.last_game_state_overview = {
+                "phase": round_info.get('phase', '未知'),
+                "activity": player.get('activity', '未知'),
+                "team": player.get('team', '--') or '--',
+                "health": state.get('health', '--'),
+            }
             if hasattr(self, 'home_tab'):
                 self.home_tab.status_gsi_server.setText("服务运行中...")
                 self.home_tab.status_gsi_server.setStyleSheet("color: green;")
+                self.home_tab.update_gsi_overview()
             # This is where the event matching logic will go
             self.integrated_sound_page.process_game_state(game_state)
             self.visual_handler.process_gsi(game_state)
@@ -631,6 +696,38 @@ class CS2Tool(FluentWindow):
         if 0 <= index < len(font_presets):
             self.apply_font_preset(font_presets[index])
 
+    def _repair_current_font_if_needed(self, silent=True):
+        current_font_path = self.config_manager.get("current_font_path")
+        if not current_font_path or not os.path.exists(current_font_path):
+            return False
+        if not self.steam_path or not os.path.exists(self.steam_path):
+            return False
+
+        steam_library_path = SteamUtils.extract_steam_library_from_cs2_path(self.steam_path)
+        if not steam_library_path:
+            return False
+
+        try:
+            replacer = FontReplacer(steam_library_path)
+            result = replacer.ensure_font_replaced(current_font_path, lambda msg: None)
+            if not result.get("success"):
+                if not silent:
+                    self.show_warning("字体检查失败", result.get("error", "当前字体状态检查失败。"))
+                return False
+
+            self.font_path = current_font_path
+            if result.get("repaired"):
+                font_name = result.get("font_name") or os.path.splitext(os.path.basename(current_font_path))[0]
+                self.config_manager.set("current_font", font_name)
+                self.config_manager.set("current_font_path", current_font_path)
+                self.update_home_status()
+                if not silent:
+                    self.show_success("字体已恢复", f"已自动补齐字体文件：{font_name}")
+                return True
+        except Exception as e:
+            print(f"字体自愈失败: {e}")
+        return False
+
     def execute_font_replace(self):
         if not self.font_path or not os.path.exists(self.font_path):
             self.show_error("文件无效", "请先选择有效的字体文件。")
@@ -681,8 +778,10 @@ class CS2Tool(FluentWindow):
         return dialog.exec()
 
     def get_input_dialog(self, title, content, default_text=""):
-        text, ok = QInputDialog.getText(self, title, content, text=default_text)
-        return text, ok
+        dialog = TextInputDialog(title, content, default_text, self)
+        if dialog.exec():
+            return dialog.get_text(), True
+        return "", False
 
     def browse_sound_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "选择音效文件", "", "音效文件 (*.vsnd_c)")
@@ -818,7 +917,7 @@ class CS2Tool(FluentWindow):
                 super().__init__(parent)
                 self.titleLabel = SubtitleLabel('替换教程', self)
                 self.viewLayout.addWidget(self.titleLabel)
-                
+
                 self.textLabel = BodyLabel(self)
                 self.textLabel.setOpenExternalLinks(True)
                 self.textLabel.setTextFormat(Qt.RichText)
@@ -838,14 +937,14 @@ class CS2Tool(FluentWindow):
                 self.textLabel.setWordWrap(True)
                 self.viewLayout.addWidget(self.textLabel)
                 self.widget.setMinimumWidth(450)
-                
+
                 self.yesButton.setText('我知道了')
                 self.cancelButton.hide()
 
         dialog = TutorialDialog(self)
         dialog.exec()
         self.update_recent_activity("查看音效替换教程")
-        
+
     def check_for_updates(self):
         thread = threading.Thread(target=self._update_check_thread, daemon=True)
         thread.start()
@@ -871,7 +970,7 @@ class CS2Tool(FluentWindow):
 
     def show_update_dialog(self, version_data):
         # json文件格式
-        # {  
+        # {
         #   "version": "最新的版本号(✪ω✪)",
         #   "update_log": "更新日志的具体说明(*^▽^*)",
         #   "download_url": "下载链接o(´^｀)o"
@@ -885,7 +984,7 @@ class CS2Tool(FluentWindow):
 
         title = f"发现新版本: {latest_version}"
         content = f"检测到新版本，是否立即更新？\n\n更新日志:\n{update_log}"
-        
+
         msg_box = MessageBox(title, content, self)
         msg_box.yesButton.setText("立即更新")
         msg_box.cancelButton.setText("忽略此版本")
@@ -898,6 +997,7 @@ class CS2Tool(FluentWindow):
 
     def closeEvent(self, event):
         if self._force_quit:
+            self.visual_handler.cleanup()
             self.gsi_manager.stop_server()
             super().closeEvent(event)
             return
@@ -909,11 +1009,11 @@ class CS2Tool(FluentWindow):
             msg_box = MessageBox("退出程序", "您想如何处理关闭操作？", self)
             msg_box.yesButton.setText("最小化到托盘")
             msg_box.cancelButton.setText("完全退出")
-            
+
             # 找到 MessageBox 中的 textLayout 或直接向 widget() 的 layout 中添加
             checkbox = CheckBox("不再提示", msg_box.widget)
             msg_box.textLayout.addWidget(checkbox)
-            
+
             if msg_box.exec():
                 if checkbox.isChecked():
                     self.config_manager.set("hide_close_prompt", True)
@@ -928,11 +1028,13 @@ class CS2Tool(FluentWindow):
                     self.config_manager.set("close_behavior", "exit")
                     if hasattr(self, 'setting_tab'):
                         self.setting_tab.closeCard.comboBox.setCurrentIndex(2)
+                self.visual_handler.cleanup()
                 self.gsi_manager.stop_server()
                 super().closeEvent(event)
         elif behavior == "tray":
             self.hide()
             event.ignore()
         else:
+            self.visual_handler.cleanup()
             self.gsi_manager.stop_server()
             super().closeEvent(event)

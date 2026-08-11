@@ -16,8 +16,8 @@ class CustomizePage(QWidget):
         layout.setContentsMargins(20, 10, 20, 20)
         layout.setSpacing(15)
 
-        layout.addWidget(TitleLabel("个性化替换"))
-        
+        layout.addWidget(TitleLabel("个性化"))
+
         self.pivot = SegmentedWidget(self)
         self.stacked_widget = QStackedWidget(self)
 
@@ -40,10 +40,10 @@ class CustomizePage(QWidget):
 
         layout.addWidget(self.pivot)
         layout.addWidget(self.stacked_widget)
-        
+
         self.pivot.setCurrentItem('videoInterface')
         self.stacked_widget.setCurrentIndex(0)
-        
+
         # Connect pivot changes to stacked widget
         self.pivot.currentItemChanged.connect(
             lambda k: self.stacked_widget.setCurrentWidget(self.findChild(QWidget, k))

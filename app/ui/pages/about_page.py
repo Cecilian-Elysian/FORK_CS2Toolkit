@@ -1,10 +1,16 @@
+import html
 import os
+import re
 import sys
+import threading
+
+import requests
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap
 from qfluentwidgets import TitleLabel, BodyLabel, PushButton, MessageBoxBase, SubtitleLabel
+from app.release_endpoints import DONATION_MARKDOWN_URL
 
 
 class SponsorshipDialog(MessageBoxBase):
@@ -40,18 +46,22 @@ class SponsorshipDialog(MessageBoxBase):
 
 
 class AboutPage(QWidget):
+    donation_content_fetched = Signal(str, bool)
+
     def __init__(self, parent):
         super().__init__()
         self.parent = parent
+        self.donation_content_fetched.connect(self._update_donation_content)
         self._setup_ui()
-    
+        self._fetch_donation_content()
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 30)
         layout.setSpacing(10)
-        
+
         layout.addWidget(TitleLabel("关于 CS2 工具箱"), 0, Qt.AlignTop)
-        
+
         about_text = BodyLabel()
         about_text.setWordWrap(True)
         about_text.setText("""
@@ -66,7 +76,7 @@ class AboutPage(QWidget):
 """.format(version=self.parent.version, repo_url=self.parent.repo_url))
         about_text.setOpenExternalLinks(True)
         layout.addWidget(about_text, 0, Qt.AlignTop)
-        
+
         self.check_update_btn = PushButton("检查更新")
         layout.addWidget(self.check_update_btn, 0, Qt.AlignTop)
 
@@ -75,6 +85,14 @@ class AboutPage(QWidget):
             self.sponsorship_btn = PushButton("赞赏支持")
             layout.addWidget(self.sponsorship_btn, 0, Qt.AlignTop)
 
+        self.donation_title = SubtitleLabel("捐赠列表", self)
+        self.donation_content = BodyLabel("正在从外部 Markdown 获取捐赠名单...", self)
+        self.donation_content.setWordWrap(True)
+        self.donation_content.setTextFormat(Qt.RichText)
+        self.donation_content.setOpenExternalLinks(True)
+
+        layout.addWidget(self.donation_title, 0, Qt.AlignTop)
+        layout.addWidget(self.donation_content, 0, Qt.AlignTop)
         layout.addStretch()
         self._connect_signals()
 
@@ -84,6 +102,96 @@ class AboutPage(QWidget):
     def _show_sponsorship_dialog(self):
         dialog = SponsorshipDialog(self._get_sponsorship_image_path(), self)
         dialog.exec()
+
+    def _fetch_donation_content(self):
+        self.donation_content.setText("正在从外部 Markdown 获取捐赠名单...")
+
+        def fetch_task():
+            try:
+                proxies = {"http": None, "https": None}
+                response = requests.get(DONATION_MARKDOWN_URL, timeout=5, proxies=proxies)
+                if response.status_code == 200 and response.text.strip():
+                    html_content = self._markdown_to_html(response.text)
+                    self.donation_content_fetched.emit(html_content, False)
+                else:
+                    self.donation_content_fetched.emit("暂未获取到捐赠名单。", True)
+            except Exception:
+                self.donation_content_fetched.emit("捐赠名单获取失败，请稍后重试。", True)
+
+        threading.Thread(target=fetch_task, daemon=True).start()
+
+    def _update_donation_content(self, content, is_error):
+        if is_error:
+            self.donation_content.setText(content)
+        else:
+            self.donation_content.setText(content)
+
+    def _format_inline_markdown(self, text):
+        placeholders = {}
+
+        def replace_link(match):
+            key = f"__LINK_{len(placeholders)}__"
+            placeholders[key] = (
+                f'<a href="{html.escape(match.group(2), quote=True)}">'
+                f'{html.escape(match.group(1))}</a>'
+            )
+            return key
+
+        text = re.sub(r'\[([^\]]+)\]\((https?://[^)]+)\)', replace_link, text)
+        escaped = html.escape(text)
+        escaped = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', escaped)
+        escaped = re.sub(r'`([^`]+)`', r'<code>\1</code>', escaped)
+
+        for key, value in placeholders.items():
+            escaped = escaped.replace(key, value)
+
+        return escaped
+
+    def _markdown_to_html(self, markdown_text):
+        lines = markdown_text.splitlines()
+        html_lines = []
+        in_list = False
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                continue
+
+            if line.startswith("# "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h3>{self._format_inline_markdown(line[2:])}</h3>")
+                continue
+
+            if line.startswith("## "):
+                if in_list:
+                    html_lines.append("</ul>")
+                    in_list = False
+                html_lines.append(f"<h4>{self._format_inline_markdown(line[3:])}</h4>")
+                continue
+
+            if line.startswith(("- ", "* ")):
+                if not in_list:
+                    html_lines.append("<ul>")
+                    in_list = True
+                html_lines.append(f"<li>{self._format_inline_markdown(line[2:])}</li>")
+                continue
+
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<p>{self._format_inline_markdown(line)}</p>")
+
+        if in_list:
+            html_lines.append("</ul>")
+
+        if not html_lines:
+            return "暂未获取到捐赠名单。"
+        return "".join(html_lines)
 
     def _connect_signals(self):
         self.check_update_btn.clicked.connect(self.parent.check_for_updates)
