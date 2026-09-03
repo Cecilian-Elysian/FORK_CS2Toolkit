@@ -1,67 +1,36 @@
-# 更新日志
+# Changelog
 
-## v1.4.0
+All notable changes to CS2 Death Switch are documented in this file.
 
-发布日期：2026-07-04
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### 新增
+## [Unreleased]
 
-- 新增功能 `GO桌宠`
-- 支持桌宠资源使用图片、GIF、`WEBM`
-- 支持桌宠大小、位置调整与多事件联动
-- 支持桌宠“游戏内显示”和“主播输出窗口”两种显示模式
-- 新增更多 GSI 互动事件，包括血量阈值、炸弹倒计时、经济阈值、回合胜负、MVP、Freeze Time 等
-- 游戏内音效事件新增“道具投出”，并支持按投掷物类型细分
-- 自定义闪光替换支持直接选择文件夹并随机显示其中图片
+### Changed
 
-### 优化
+- Repository rewritten in Rust as **CS2 Death Switch**, replacing the previous
+  Python/PySide6-based CS2Toolkit.
+- Application identity, configuration directory and persisted state migrated
+  to `CS2DeathSwitch` (under `%LOCALAPPDATA%\CS2DeathSwitch`).
+- The new release does not read, migrate or delete any data left behind by
+  the previous Python-based CS2Toolkit.
 
-- 优化多个依赖 GSI 的功能响应速度
-- 击杀检测改为更及时的统计字段，提升击杀图标和音效触发速度
-- 为高频触发资源增加缓存思路，减少重复磁盘读取造成的延迟
-- 重构 GO桌宠 的事件配置列表与交互布局，提升可读性和可操作性
-- 改进明亮/暗黑主题适配，尤其是 GO桌宠 互动事件配置区域
-- 优化导入旧版本配置时的兼容逻辑，自动补全新字段并清理废弃字段
-- 优化主播输出窗口首次显示位置，避免窗口跑到左上角
+### Removed
 
-### 修复
+- Resource replacement (custom startup movie, sound, font).
+- GSI-driven sound events and presets.
+- In-game visual replacements (flash, kill icons, death media).
+- `GO桌宠` desktop pet overlay.
+- Preset import/export and the public/private update channels.
+- All Python source, build scripts and PySide6 dependencies.
 
-- 修复“一键切屏”在回合开始时无法自动切回游戏的问题
-- 修复旧配置无法自动继承到新版本目录的问题（配置现已统一存至用户 AppData 目录，并支持从旧目录自动迁移）
-- 修复导入导出中残留无用配置项的问题
+### Added
 
-### 说明
-
-- **自定义数据目录**：新增数据目录迁移功能，可在设置页查看当前配置路径，并支持一键安全迁移至其他盘符（如 D 盘），缓解 C 盘空间压力。
-- 打包体积优化：调整打包策略，生成高压缩便携包并精简冗余运行库，换取更优的更新下载体验
-- 当前版本开始，项目版本号更新为 `1.4.0`
-- 如需公开发布，建议同时检查 `README.md`、`THIRD_PARTY_NOTICES.zh-CN.md` 与 `OPEN_SOURCE_RELEASE_CHECKLIST.zh-CN.md`
-
-## v1.5.0
-
-发布日期：2026-07-09
-
-### 新增功能
-
-- **闪光弹降噪**：被闪白时游戏音量会自动压低，屏幕恢复后音量也会跟着恢复，保护听力。
-- **死亡画面支持半透明**：死亡覆盖图现在支持带透明度的 PNG 图片，不再强制全屏白底。
-- **切屏功能升级**：死后切屏现在不仅能开网页，还能选本地程序。下个回合复活时，不仅能自动切回游戏，还可以设置顺手帮你关掉刚才打开的浏览器，或者暂停正在播放的音乐/视频。
-- **关于页更新**：加上了动态捐赠名单，数据直接从外部拉取 Markdown 渲染。
-- **支持 Vulkan 全屏**：主页启动游戏时可选注入 `-vulkan` 参数，全屏模式下覆盖功能也能正常使用了。
-- **批量删事件**：音效事件列表现在支持多选，删起来快多了。
-
-### 体验优化
-
-- **零延迟覆盖**：对底层渲染和网络进行了彻底的优化。现在无论是被闪还是被击杀，图片的显示和游戏里的白屏几乎完全同步，感受不到“慢半拍”了。
-- **导航重构**：重新梳理了侧边导航栏，把功能都整合进了“游戏增强”等大类里，主页也改回了更清爽的列表布局。
-- **统一界面风格**：把软件里残留的一堆 Windows 原生文件选择框、提示弹窗全换成了统一的 Fluent 风格控件，看起来舒服多了。
-- **性能优化**：音效事件处理改成了纯内存匹配加防抖保存，解决了配多了事件之后软件容易卡死的问题。
-- **配置无缝衔接**：补齐了配置导入导出的遗漏项，现在换电脑或者重装软件也能完美保留所有设置。
-
-### 修复问题
-
-- **数据迁移不再撑爆硬盘**：修复了把数据目录往 E 盘根目录迁移时，因为疯狂套娃复制导致硬盘直接被塞满的严重 Bug。
-- **切屏判定更准**：修复了“死亡一键切屏”在观战队友时就提前切回游戏的问题，现在必须是你自己复活了才会切回来。
-- **字体不再丢失**：修复了没开软件就退游戏导致字体丢失的问题，现在只要启动软件就会自动把缺的字体补回去。
-- **GSI 端口防卡死**：优化了 GSI 服务端口切换的逻辑，即使端口被占用了，按钮也不会再卡死点不动了。
-- **切出游戏防遮挡**：修复了在被闪白期间切出或者最小化游戏时，闪光图片会一直糊在桌面上关不掉的问题。
+- GSI listener bound only to `127.0.0.1` with a configurable port.
+- Automatic Steam library detection (multiple Steam install roots, all
+  `libraryfolders.vdf` entries, environment-variable override).
+- `gamestate_integration_cs2deathswitch.cfg` generator.
+- Death → switch, respawn/round start → pause media + return to CS2.
+- Optional close-to-tray with system tray menu (pause, show, exit).
+- Standalone JSON configuration persisted per-user.

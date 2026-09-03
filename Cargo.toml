@@ -1,0 +1,29 @@
+[package]
+name = "cs2-death-switch"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+description = "Switch to a chosen web page or local application after a CS2 player death."
+
+[dependencies]
+directories = "6.0"
+eframe = "0.33"
+futures-lite = "2.6"
+rfd = "0.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tiny_http = "0.12"
+tray-icon = "0.21"
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Media_Control",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

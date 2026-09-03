@@ -1,0 +1,123 @@
+use crate::config::{Config, TargetType};
+use std::{ffi::OsStr, os::windows::ffi::OsStrExt, process::Command};
+use windows::{
+    Win32::{
+        Foundation::{HWND, LPARAM},
+        UI::WindowsAndMessaging::{
+            EnumWindows, FindWindowW, GetClassNameW, IsWindowVisible,
+            SW_MINIMIZE, SW_RESTORE, SetForegroundWindow, ShowWindow,
+        },
+    },
+    core::{BOOL, PCWSTR},
+};
+
+pub fn switch_away(config: &Config) -> Result<String, String> {
+    minimize_cs2();
+    match config.target_type {
+        TargetType::Url => open_url(&config.target),
+        TargetType::App => open_app(&config.target),
+    }
+}
+
+pub fn return_to_cs2() {
+    if let Some(window) = cs2_window() {
+        unsafe {
+            let _ = ShowWindow(window, SW_RESTORE);
+            let _ = SetForegroundWindow(window);
+        }
+    }
+}
+
+fn minimize_cs2() {
+    if let Some(window) = cs2_window() {
+        unsafe {
+            let _ = ShowWindow(window, SW_MINIMIZE);
+        };
+    }
+}
+
+fn cs2_window() -> Option<HWND> {
+    let title = wide("Counter-Strike 2");
+    let window = unsafe { FindWindowW(None, PCWSTR(title.as_ptr())) }.ok()?;
+    (window != HWND::default()).then_some(window)
+}
+
+fn open_url(url: &str) -> Result<String, String> {
+    let url = if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_owned()
+    } else {
+        format!("https://{url}")
+    };
+    Command::new("explorer.exe")
+        .arg(&url)
+        .spawn()
+        .map_err(|error| format!("cannot open URL: {error}"))?;
+    Ok(format!("opened {url}"))
+}
+
+fn open_app(path: &str) -> Result<String, String> {
+    if path.trim().is_empty() {
+        return Err("choose a local application first".to_owned());
+    }
+    Command::new(path)
+        .spawn()
+        .map_err(|error| format!("cannot start application: {error}"))?;
+    Ok(format!("started {path}"))
+}
+
+pub fn pause_current_media() -> Result<(), String> {
+    // The global media session API targets the session Windows exposes for media controls.
+    use windows::Media::Control::{
+        GlobalSystemMediaTransportControlsSessionManager,
+        GlobalSystemMediaTransportControlsSessionPlaybackStatus,
+    };
+    let manager = futures_lite::future::block_on(async {
+        GlobalSystemMediaTransportControlsSessionManager::RequestAsync()?.await
+    })
+    .map_err(|error| error.to_string())?;
+    let session = manager
+        .GetCurrentSession()
+        .map_err(|error| error.to_string())?;
+    let info = session
+        .GetPlaybackInfo()
+        .map_err(|error| error.to_string())?;
+    if info.PlaybackStatus().map_err(|error| error.to_string())?
+        == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing
+    {
+        let _ = futures_lite::future::block_on(async { session.TryPauseAsync()?.await });
+    }
+    Ok(())
+}
+
+pub fn activate_existing_browser() -> bool {
+    unsafe extern "system" fn callback(window: HWND, found: LPARAM) -> BOOL {
+        if !unsafe { IsWindowVisible(window).as_bool() } {
+            return BOOL(1);
+        }
+        let mut name = [0_u16; 128];
+        let len = unsafe { GetClassNameW(window, &mut name) } as usize;
+        let class_name = String::from_utf16_lossy(&name[..len]);
+        if matches!(
+            class_name.as_str(),
+            "Chrome_WidgetWin_1" | "MozillaWindowClass"
+        ) {
+            unsafe {
+                let _ = ShowWindow(window, SW_RESTORE);
+                let _ = SetForegroundWindow(window);
+                *(found.0 as *mut bool) = true;
+            }
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+
+    let mut found = false;
+    unsafe {
+        let _ = EnumWindows(Some(callback), LPARAM((&mut found as *mut bool) as isize));
+    }
+    found
+}
+
+fn wide(value: &str) -> Vec<u16> {
+    OsStr::new(value).encode_wide().chain(Some(0)).collect()
+}
