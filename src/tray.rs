@@ -22,16 +22,16 @@ pub struct Tray {
 impl Tray {
     pub fn new() -> Result<Self, String> {
         let menu = Menu::new();
-        let toggle = MenuItem::new("Pause switching", true, None);
-        let show = MenuItem::new("Show window", true, None);
-        let quit = MenuItem::new("Exit", true, None);
+        let toggle = MenuItem::new("暂停切换", true, None);
+        let show = MenuItem::new("显示窗口", true, None);
+        let quit = MenuItem::new("退出", true, None);
         menu.append(&toggle).map_err(|error| error.to_string())?;
         menu.append(&show).map_err(|error| error.to_string())?;
         menu.append(&quit).map_err(|error| error.to_string())?;
         let icon = Icon::from_rgba(gradient_rgba(), ICON_SIZE as u32, ICON_SIZE as u32)
             .map_err(|error| error.to_string())?;
         let tray = TrayIconBuilder::new()
-            .with_tooltip("CS2 Death Switch")
+            .with_tooltip("CS2 死亡切换")
             .with_menu(Box::new(menu))
             .with_icon(icon)
             .build()

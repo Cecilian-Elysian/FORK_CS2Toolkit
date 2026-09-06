@@ -10,6 +10,8 @@ This is a Rust rewrite of the original CS2Toolkit. The former resource replaceme
 - Counter-Strike 2
 - Rust 1.85 or newer for building from source
 
+The user interface is entirely in Chinese (简体中文). At startup the application automatically loads a CJK font from the system font directory (`%WINDIR%\Fonts`), trying Microsoft YaHei (`msyh.ttc`), SimHei, SimSun and DengXian in that order. No font files are bundled; if none of these fonts is present, Chinese text may render as boxes.
+
 ## Build and run
 
 ```powershell
@@ -29,7 +31,7 @@ It never reads, migrates, or deletes `%LOCALAPPDATA%\CS2Toolkit` data.
 1. Start the application.
 2. Enter a web URL or select a local application.
 3. Select or detect the CS2 installation directory.
-4. Select `Generate GSI config`.
+4. Select `生成 GSI 配置` (Generate GSI config).
 5. Restart CS2 after generating the configuration.
 
 The generated file is `game\csgo\cfg\gamestate_integration_cs2deathswitch.cfg` under the CS2 installation directory. The local receiver binds only to `127.0.0.1` and uses port `3000` by default.

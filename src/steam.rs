@@ -22,7 +22,7 @@ pub fn write_gsi_config(cs2_root: &Path, port: u16) -> io::Result<PathBuf> {
     if !is_cs2_root(cs2_root) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "invalid CS2 directory",
+            "无效的 CS2 目录",
         ));
     }
     let cfg_dir = cs2_root.join("game/csgo/cfg");

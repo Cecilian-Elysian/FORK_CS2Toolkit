@@ -51,18 +51,18 @@ fn open_url(url: &str) -> Result<String, String> {
     Command::new("explorer.exe")
         .arg(&url)
         .spawn()
-        .map_err(|error| format!("cannot open URL: {error}"))?;
-    Ok(format!("opened {url}"))
+        .map_err(|error| format!("无法打开网页：{error}"))?;
+    Ok(format!("已打开 {url}"))
 }
 
 fn open_app(path: &str) -> Result<String, String> {
     if path.trim().is_empty() {
-        return Err("choose a local application first".to_owned());
+        return Err("请先选择本地程序".to_owned());
     }
     Command::new(path)
         .spawn()
-        .map_err(|error| format!("cannot start application: {error}"))?;
-    Ok(format!("started {path}"))
+        .map_err(|error| format!("无法启动程序：{error}"))?;
+    Ok(format!("已启动 {path}"))
 }
 
 pub fn pause_current_media() -> Result<(), String> {

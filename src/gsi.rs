@@ -17,9 +17,9 @@ pub fn start(
 ) -> Result<thread::JoinHandle<()>, String> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| match error.kind() {
         std::io::ErrorKind::AddrInUse => format!(
-            "port {port} is already in use; close the other GSI listener or change the configured port"
+            "端口 {port} 已被占用：请关闭占用该端口的程序，或在配置中更换端口"
         ),
-        _ => format!("could not bind 127.0.0.1:{port}: {error}"),
+        _ => format!("无法绑定 127.0.0.1:{port}：{error}"),
     })?;
     listener
         .set_nonblocking(true)

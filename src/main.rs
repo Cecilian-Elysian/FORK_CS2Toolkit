@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod detector;
+mod fonts;
 mod gsi;
 mod steam;
 mod system;
@@ -11,7 +12,7 @@ fn main() -> eframe::Result<()> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([560.0, 430.0])
             .with_min_inner_size([500.0, 390.0])
-            .with_title("CS2 Death Switch"),
+            .with_title("CS2 死亡切换"),
         ..Default::default()
     };
     eframe::run_native(

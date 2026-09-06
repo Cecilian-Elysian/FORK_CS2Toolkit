@@ -34,3 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Death → switch, respawn/round start → pause media + return to CS2.
 - Optional close-to-tray with system tray menu (pause, show, exit).
 - Standalone JSON configuration persisted per-user.
+- Fully Chinese user interface (window, controls, tray menu, logs).
+- Automatic loading of a system CJK font at startup (Microsoft YaHei,
+  SimHei, SimSun or DengXian from `%WINDIR%\Fonts`); no fonts are
+  bundled with the binary.

@@ -31,7 +31,8 @@ pub struct DeathSwitchApp {
 }
 
 impl DeathSwitchApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let font_source = crate::fonts::install(&cc.egui_ctx);
         let config = config::load();
         let (sender, state_receiver) = mpsc::channel();
         let running = Arc::new(AtomicBool::new(true));
@@ -44,20 +45,24 @@ impl DeathSwitchApp {
             gsi_thread: None,
             pending_switch: None,
             target_active: false,
-            status: "starting GSI listener".to_owned(),
+            status: "正在启动 GSI 监听".to_owned(),
             logs: Vec::new(),
             tray,
             quit_requested: false,
         };
+        match font_source {
+            Some(source) => app.log(format!("已加载中文字体：{source}")),
+            None => app.log("未找到系统中文字体，中文可能显示为方块"),
+        }
         match gsi::start(app.config.gsi_port, sender, running) {
             Ok(thread) => {
                 app.gsi_thread = Some(thread);
-                app.status = format!("listening on 127.0.0.1:{}", app.config.gsi_port);
+                app.status = format!("正在监听 127.0.0.1:{}", app.config.gsi_port);
             }
-            Err(error) => app.status = format!("GSI listener failed: {error}"),
+            Err(error) => app.status = format!("GSI 监听启动失败：{error}"),
         }
         if app.tray.is_none() {
-            app.log("system tray unavailable; tray controls are disabled".to_owned());
+            app.log("系统托盘不可用，托盘功能已禁用".to_owned());
         }
         app
     }
@@ -71,8 +76,8 @@ impl DeathSwitchApp {
 
     fn save(&mut self) {
         match config::save(&self.config) {
-            Ok(()) => self.log("configuration saved"),
-            Err(error) => self.log(format!("could not save configuration: {error}")),
+            Ok(()) => self.log("配置已保存"),
+            Err(error) => self.log(format!("保存配置失败：{error}")),
         }
     }
 
@@ -83,7 +88,7 @@ impl DeathSwitchApp {
                     self.pending_switch = Some(
                         Instant::now() + Duration::from_secs(self.config.delay_seconds.into()),
                     );
-                    self.log("death detected; switch scheduled");
+                    self.log("检测到死亡，已计划切换");
                 }
                 Event::Returned => self.return_to_game(),
                 _ => {}
@@ -102,9 +107,9 @@ impl DeathSwitchApp {
                 self.config.enabled = !self.config.enabled;
                 self.save();
                 self.log(if self.config.enabled {
-                    "switching enabled"
+                    "已启用切换"
                 } else {
-                    "switching paused"
+                    "已暂停切换"
                 });
             }
             Some(TrayAction::Show) => ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true)),
@@ -118,14 +123,14 @@ impl DeathSwitchApp {
 
     fn switch_away(&mut self) {
         if self.config.target.trim().is_empty() {
-            self.log("switch skipped: no target selected");
+            self.log("已跳过切换：未设置目标");
             return;
         }
         let result = if self.target_active
             && self.config.target_type == TargetType::Url
             && system::activate_existing_browser()
         {
-            Ok("activated existing browser".to_owned())
+            Ok("已激活现有浏览器窗口".to_owned())
         } else {
             system::switch_away(&self.config)
         };
@@ -145,12 +150,12 @@ impl DeathSwitchApp {
         }
         if self.config.pause_media_on_return {
             if let Err(error) = system::pause_current_media() {
-                self.log(format!("could not pause media: {error}"));
+                self.log(format!("暂停媒体失败：{error}"));
             }
         }
         system::return_to_cs2();
         self.target_active = false;
-        self.log("returned to CS2");
+        self.log("已返回 CS2");
     }
 
     fn choose_cs2(&mut self) {
@@ -158,9 +163,9 @@ impl DeathSwitchApp {
             if steam::is_cs2_root(&path) {
                 self.config.cs2_path = path.display().to_string();
                 self.save();
-                self.log("CS2 directory selected");
+                self.log("已选择 CS2 目录");
             } else {
-                self.log("selected directory does not contain cs2.exe");
+                self.log("所选目录中未找到 cs2.exe");
             }
         }
     }
@@ -170,17 +175,17 @@ impl DeathSwitchApp {
             Some(path) => {
                 self.config.cs2_path = path.display().to_string();
                 self.save();
-                self.log("CS2 installation detected");
+                self.log("已检测到 CS2 安装目录");
             }
-            None => self.log("CS2 installation was not found"),
+            None => self.log("未找到 CS2 安装目录"),
         }
     }
 
     fn generate_gsi(&mut self) {
         let path = PathBuf::from(&self.config.cs2_path);
         match steam::write_gsi_config(&path, self.config.gsi_port) {
-            Ok(path) => self.log(format!("wrote {}", path.display())),
-            Err(error) => self.log(format!("could not write GSI config: {error}")),
+            Ok(path) => self.log(format!("已写入 {}", path.display())),
+            Err(error) => self.log(format!("写入 GSI 配置失败：{error}")),
         }
     }
 }
@@ -209,26 +214,26 @@ impl eframe::App for DeathSwitchApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("CS2 Death Switch");
+            ui.heading("CS2 死亡切换");
             ui.label(RichText::new(&self.status).color(Color32::from_rgb(70, 170, 110)));
             ui.separator();
 
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.config.enabled, "Enable death switching");
+                ui.checkbox(&mut self.config.enabled, "启用死亡切换");
                 ui.checkbox(
                     &mut self.config.pause_media_on_return,
-                    "Pause media on return",
+                    "返回时暂停媒体",
                 );
-                ui.checkbox(&mut self.config.close_to_tray, "Close to tray");
+                ui.checkbox(&mut self.config.close_to_tray, "关闭时最小化到托盘");
             });
             ui.add_space(8.0);
-            ui.label("Target");
+            ui.label("切换目标");
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.config.target_type, TargetType::Url, "Web page");
+                ui.selectable_value(&mut self.config.target_type, TargetType::Url, "网页");
                 ui.selectable_value(
                     &mut self.config.target_type,
                     TargetType::App,
-                    "Local application",
+                    "本地程序",
                 );
             });
             ui.horizontal(|ui| {
@@ -242,9 +247,9 @@ impl eframe::App for DeathSwitchApp {
                         .hint_text(hint)
                         .desired_width(380.0),
                 );
-                if self.config.target_type == TargetType::App && ui.button("Browse").clicked() {
+                if self.config.target_type == TargetType::App && ui.button("浏览").clicked() {
                     if let Some(path) = rfd::FileDialog::new()
-                        .add_filter("Applications", &["exe", "lnk", "bat", "cmd"])
+                        .add_filter("应用程序", &["exe", "lnk", "bat", "cmd"])
                         .pick_file()
                     {
                         self.config.target = path.display().to_string();
@@ -252,46 +257,46 @@ impl eframe::App for DeathSwitchApp {
                 }
             });
             ui.horizontal(|ui| {
-                ui.label("Delay (seconds)");
+                ui.label("延迟（秒）");
                 ui.add(egui::DragValue::new(&mut self.config.delay_seconds).range(0..=60));
-                if ui.button("Save").clicked() {
+                if ui.button("保存").clicked() {
                     self.save();
                 }
-                if ui.button("Test switch").clicked() {
+                if ui.button("测试切换").clicked() {
                     self.switch_away();
                 }
-                if ui.button("Return to CS2").clicked() {
+                if ui.button("返回 CS2").clicked() {
                     self.return_to_game();
                 }
-                if ui.button("Hide to tray").clicked() {
+                if ui.button("隐藏到托盘").clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 }
             });
 
             ui.separator();
-            ui.label("CS2 integration");
+            ui.label("CS2 集成");
             ui.horizontal(|ui| {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.config.cs2_path)
-                        .hint_text("CS2 installation directory")
+                        .hint_text("CS2 安装目录")
                         .desired_width(370.0),
                 );
-                if ui.button("Choose").clicked() {
+                if ui.button("选择").clicked() {
                     self.choose_cs2();
                 }
             });
             ui.horizontal(|ui| {
-                if ui.button("Detect CS2").clicked() {
+                if ui.button("检测 CS2").clicked() {
                     self.detect_cs2();
                 }
-                if ui.button("Generate GSI config").clicked() {
+                if ui.button("生成 GSI 配置").clicked() {
                     self.generate_gsi();
                 }
-                ui.label(format!("Port: {}", self.config.gsi_port));
+                ui.label(format!("端口：{}", self.config.gsi_port));
             });
 
             ui.separator();
-            ui.label("Recent activity");
+            ui.label("最近活动");
             for line in &self.logs {
                 ui.label(line);
             }
