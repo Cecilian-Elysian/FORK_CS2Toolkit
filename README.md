@@ -26,6 +26,26 @@ cargo run --release
 
 它不会读取、迁移或删除 `%LOCALAPPDATA%\CS2Toolkit` 的数据。
 
+## 打包与发布
+
+编译发行版，得到单文件可执行程序：
+
+```powershell
+cargo build --release
+```
+
+产物：`target\release\cs2-death-switch.exe`
+
+该程序为独立的单文件发布，无第三方 DLL 依赖（运行库均为 Windows 系统自带，CJK 字体在运行时从系统字体目录加载），解压即可运行。
+
+发布步骤：
+
+1. 将 `cs2-death-switch.exe` 连同 `README.md`、`LICENSE` 一起放入发布目录。
+2. 将其压缩为 zip（或直接发布 exe）。
+3. 在 GitHub 仓库创建 Release，填写版本号（如 `v0.1.0`）与说明，上传上述文件。
+
+若已安装并登录 [GitHub CLI](https://cli.github.com)，可用 `gh release create` 发布。
+
 ## 使用步骤
 
 1. 启动应用。
