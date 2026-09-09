@@ -1,4 +1,3 @@
-use crate::config::{Config, TargetType};
 use std::{ffi::OsStr, os::windows::ffi::OsStrExt, process::Command};
 use windows::{
     Win32::{
@@ -16,23 +15,13 @@ const WM_SYSCOMMAND: u32 = 0x0112;
 const SC_MINIMIZE: usize = 0xF020;
 const VK_MENU: u8 = 0x12;
 
-pub fn switch_away(config: &Config) -> Result<String, String> {
-    minimize_cs2();
-    match config.target_type {
-        TargetType::Url => open_url(&config.target),
-        TargetType::App => open_app(&config.target),
-    }?;
-    let _ = activate_existing_browser();
-    Ok(format!("已切换到 {}", config.target))
-}
-
 pub fn return_to_cs2() {
     if let Some(window) = cs2_window() {
         force_foreground(window);
     }
 }
 
-fn minimize_cs2() {
+pub fn minimize_cs2() {
     if let Some(window) = cs2_window() {
         unsafe {
             // Release an exclusive mouse capture so the game actually leaves the
@@ -65,7 +54,7 @@ fn cs2_window() -> Option<HWND> {
     (window != HWND::default()).then_some(window)
 }
 
-fn open_url(url: &str) -> Result<String, String> {
+pub fn open_url(url: &str) -> Result<String, String> {
     let url = if url.starts_with("http://") || url.starts_with("https://") {
         url.to_owned()
     } else {
@@ -78,7 +67,7 @@ fn open_url(url: &str) -> Result<String, String> {
     Ok(format!("已打开 {url}"))
 }
 
-fn open_app(path: &str) -> Result<String, String> {
+pub fn open_app(path: &str) -> Result<String, String> {
     if path.trim().is_empty() {
         return Err("请先选择本地程序".to_owned());
     }

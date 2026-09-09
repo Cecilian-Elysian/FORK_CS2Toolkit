@@ -36,7 +36,6 @@ pub struct DeathSwitchApp {
     last_spectating: bool,
     last_saved_target: String,
     target_dirty_since: Option<Instant>,
-    port_warned: bool,
 }
 
 impl DeathSwitchApp {
@@ -66,7 +65,6 @@ impl DeathSwitchApp {
             last_spectating: false,
             last_saved_target: config.target.clone(),
             target_dirty_since: None,
-            port_warned: false,
         };
         match font_source {
             Some(source) => app.log(format!("已加载中文字体：{source}")),
@@ -129,7 +127,11 @@ impl DeathSwitchApp {
         if self.gsi_bound_port == 0 {
             return;
         }
-        if self.gsi_bound_port != self.config.gsi_port && !self.port_warned {
+        // Only nag about the cfg/port mismatch while we have not seen any GSI
+        // packets. Once packets are flowing we know CS2 is talking to us on
+        // whatever port we ended up bound to, and showing the running counter
+        // is more useful than the persistent warning.
+        if self.gsi_bound_port != self.config.gsi_port && self.gsi_packets == 0 {
             self.status_color = Color32::from_rgb(220, 140, 60);
             self.status = format!(
                 "已绑定到备用端口 {}（配置端口 {} 已被占用）。点「生成 GSI 配置」同步到 CS2。",
@@ -159,9 +161,7 @@ impl DeathSwitchApp {
     }
 
     fn handle_gsi(&mut self) {
-        let mut any_packet = false;
         while let Ok(game_state) = self.state_receiver.try_recv() {
-            any_packet = true;
             self.gsi_packets = self.gsi_packets.saturating_add(1);
             self.last_health = game_state.player.state.health;
             self.last_phase.clone_from(&game_state.round.phase);
@@ -176,9 +176,6 @@ impl DeathSwitchApp {
                 Event::Returned => self.return_to_game(),
                 _ => {}
             }
-        }
-        if any_packet {
-            self.port_warned = false;
         }
         if self.pending_switch.is_some_and(|at| Instant::now() >= at) {
             self.pending_switch = None;
@@ -212,13 +209,20 @@ impl DeathSwitchApp {
             self.log("已跳过切换：未设置目标");
             return;
         }
-        let result = if self.target_active
+        // Always minimize CS2 first, mirroring the original CS2Toolkit, so the
+        // target window can actually surface even when we reuse an existing
+        // browser.
+        system::minimize_cs2();
+        let reuse_existing_browser = self.target_active
             && self.config.target_type == TargetType::Url
-            && system::activate_existing_browser()
-        {
+            && system::activate_existing_browser();
+        let result = if reuse_existing_browser {
             Ok("已激活现有浏览器窗口".to_owned())
         } else {
-            system::switch_away(&self.config)
+            match self.config.target_type {
+                TargetType::Url => system::open_url(&self.config.target),
+                TargetType::App => system::open_app(&self.config.target),
+            }
         };
         match result {
             Ok(message) => {
