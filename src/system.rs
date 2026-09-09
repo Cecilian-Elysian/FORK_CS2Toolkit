@@ -2,37 +2,60 @@ use crate::config::{Config, TargetType};
 use std::{ffi::OsStr, os::windows::ffi::OsStrExt, process::Command};
 use windows::{
     Win32::{
-        Foundation::{HWND, LPARAM},
+        Foundation::{HWND, LPARAM, WPARAM},
+        UI::Input::KeyboardAndMouse::{KEYEVENTF_KEYUP, keybd_event},
         UI::WindowsAndMessaging::{
-            EnumWindows, FindWindowW, GetClassNameW, IsWindowVisible,
-            SW_MINIMIZE, SW_RESTORE, SetForegroundWindow, ShowWindow,
+            ClipCursor, EnumWindows, FindWindowW, GetClassNameW, IsWindowVisible, PostMessageW,
+            SW_RESTORE, SW_SHOWMINNOACTIVE, SetForegroundWindow, ShowWindow,
         },
     },
     core::{BOOL, PCWSTR},
 };
+
+const WM_SYSCOMMAND: u32 = 0x0112;
+const SC_MINIMIZE: usize = 0xF020;
+const VK_MENU: u8 = 0x12;
 
 pub fn switch_away(config: &Config) -> Result<String, String> {
     minimize_cs2();
     match config.target_type {
         TargetType::Url => open_url(&config.target),
         TargetType::App => open_app(&config.target),
-    }
+    }?;
+    let _ = activate_existing_browser();
+    Ok(format!("已切换到 {}", config.target))
 }
 
 pub fn return_to_cs2() {
     if let Some(window) = cs2_window() {
-        unsafe {
-            let _ = ShowWindow(window, SW_RESTORE);
-            let _ = SetForegroundWindow(window);
-        }
+        force_foreground(window);
     }
 }
 
 fn minimize_cs2() {
     if let Some(window) = cs2_window() {
         unsafe {
-            let _ = ShowWindow(window, SW_MINIMIZE);
-        };
+            // Release an exclusive mouse capture so the game actually leaves the
+            // foreground, especially important when CS2 is running in fullscreen.
+            let _ = ClipCursor(None);
+            // Preferred minimize path that mirrors the original CS2Toolkit.
+            let _ = PostMessageW(Some(window), WM_SYSCOMMAND, WPARAM(SC_MINIMIZE), LPARAM(0));
+            let _ = ShowWindow(window, SW_SHOWMINNOACTIVE);
+        }
+    }
+}
+
+fn force_foreground(window: HWND) {
+    unsafe {
+        let _ = SetForegroundWindow(window);
+        let _ = ShowWindow(window, SW_RESTORE);
+        let _ = SetForegroundWindow(window);
+        // The classic Windows workaround for the foreground-activation lock:
+        // simulate an ALT key press so the target process is treated as a
+        // legitimate foreground owner.
+        keybd_event(VK_MENU, 0, Default::default(), 0);
+        keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+        let _ = SetForegroundWindow(window);
     }
 }
 
@@ -102,7 +125,13 @@ pub fn activate_existing_browser() -> bool {
             "Chrome_WidgetWin_1" | "MozillaWindowClass"
         ) {
             unsafe {
+                // Use the proven foreground-steal pattern so the browser
+            // actually appears on top, instead of being silently
+            // ignored by the Windows foreground lock.
                 let _ = ShowWindow(window, SW_RESTORE);
+                let _ = SetForegroundWindow(window);
+                keybd_event(VK_MENU, 0, Default::default(), 0);
+                keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
                 let _ = SetForegroundWindow(window);
                 *(found.0 as *mut bool) = true;
             }

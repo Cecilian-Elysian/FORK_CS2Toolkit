@@ -5,11 +5,17 @@ mod config;
 mod detector;
 mod fonts;
 mod gsi;
+mod instance;
 mod steam;
 mod system;
 mod tray;
 
 fn main() -> eframe::Result<()> {
+    if instance::acquire().is_none() {
+        // Another instance is already running and its window has been woken.
+        // Exit silently so the user is not confused by a second window.
+        return Ok(());
+    }
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([560.0, 430.0])
